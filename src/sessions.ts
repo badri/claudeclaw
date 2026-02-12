@@ -1,55 +1,55 @@
 import { join } from "path";
+import { unlink } from "fs/promises";
 import { randomUUID } from "crypto";
 
 const HEARTBEAT_DIR = join(process.cwd(), ".claude", "heartbeat");
-const SESSIONS_FILE = join(HEARTBEAT_DIR, "telegram-sessions.json");
+const SESSION_FILE = join(HEARTBEAT_DIR, "session.json");
 
-export interface UserSession {
+interface GlobalSession {
   sessionId: string;
   createdAt: string;
-  lastMessageAt: string;
+  lastUsedAt: string;
 }
 
-export interface TelegramSessions {
-  users: Record<string, UserSession>;
-}
+let current: GlobalSession | null = null;
 
-export async function loadSessions(): Promise<TelegramSessions> {
+async function loadSession(): Promise<GlobalSession | null> {
+  if (current) return current;
   try {
-    return await Bun.file(SESSIONS_FILE).json();
+    current = await Bun.file(SESSION_FILE).json();
+    return current;
   } catch {
-    return { users: {} };
+    return null;
   }
 }
 
-export async function saveSessions(sessions: TelegramSessions): Promise<void> {
-  await Bun.write(SESSIONS_FILE, JSON.stringify(sessions, null, 2) + "\n");
+async function saveSession(session: GlobalSession): Promise<void> {
+  current = session;
+  await Bun.write(SESSION_FILE, JSON.stringify(session, null, 2) + "\n");
 }
 
-export async function getOrCreateSession(
-  userId: number
-): Promise<{ sessionId: string; isNew: boolean }> {
-  const sessions = await loadSessions();
-  const key = String(userId);
-
-  if (sessions.users[key]) {
-    sessions.users[key].lastMessageAt = new Date().toISOString();
-    await saveSessions(sessions);
-    return { sessionId: sessions.users[key].sessionId, isNew: false };
+export async function getOrCreateSession(): Promise<{ sessionId: string; isNew: boolean }> {
+  const existing = await loadSession();
+  if (existing) {
+    existing.lastUsedAt = new Date().toISOString();
+    await saveSession(existing);
+    return { sessionId: existing.sessionId, isNew: false };
   }
 
-  const sessionId = randomUUID();
-  sessions.users[key] = {
-    sessionId,
+  const session: GlobalSession = {
+    sessionId: randomUUID(),
     createdAt: new Date().toISOString(),
-    lastMessageAt: new Date().toISOString(),
+    lastUsedAt: new Date().toISOString(),
   };
-  await saveSessions(sessions);
-  return { sessionId, isNew: true };
+  await saveSession(session);
+  return { sessionId: session.sessionId, isNew: true };
 }
 
-export async function deleteSession(userId: number): Promise<void> {
-  const sessions = await loadSessions();
-  delete sessions.users[String(userId)];
-  await saveSessions(sessions);
+export async function resetSession(): Promise<void> {
+  current = null;
+  try {
+    await unlink(SESSION_FILE);
+  } catch {
+    // already gone
+  }
 }

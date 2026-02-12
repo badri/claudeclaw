@@ -31,8 +31,7 @@ Start the heartbeat daemon for this project. Follow these steps exactly:
        },
        "telegram": {
          "token": "",
-         "allowedUserIds": [],
-         "projectPath": ""
+         "allowedUserIds": []
        }
      }
      ```
@@ -44,22 +43,24 @@ Start the heartbeat daemon for this project. Follow these steps exactly:
 
 5. **Report**: Print the ASCII art below then show the PID and status info.
 
-CRITICAL: Output the ASCII art block below EXACTLY as-is inside a markdown code block. The 🦞 emoji is 2 columns wide in monospace — the spacing already accounts for this. Do NOT re-indent, re-align, or adjust ANY whitespace. Copy every character verbatim. Only replace `<PID>` and `<WORKING_DIR>` with actual values. If you modify any spaces, the art WILL be misaligned.
+CRITICAL: Output the ASCII art block below EXACTLY as-is inside a markdown code block. Do NOT re-indent, re-align, or adjust ANY whitespace. Copy every character verbatim. Only replace `<PID>` and `<WORKING_DIR>` with actual values.
 
 ```
-      🦞  ▐▛███▜▌  🦞
-         ▝▜█████▛▘
-           ▘▘ ▝▝
+🦞         🦞
+   ▐▛███▜▌
+  ▝▜█████▛▘
+    ▘▘ ▝▝
+```
 
-   HELLO, I AM YOUR CLAUDECLAW!
+# HELLO, I AM YOUR CLAUDECLAW!
+**Daemon is running! PID: \<PID> | Dir: \<WORKING_DIR>**
 
-   Daemon is running! PID: <PID> | Dir: <WORKING_DIR>
+```
+   1. Enable heartbeat?
+   2. Configure Telegram?
 
-   1. Enable heartbeat?       (yes/no)
-   2. Configure Telegram?      (yes/no)
-
-   /heartbeat:status  - check status
-   /heartbeat:stop    - stop daemon
+/heartbeat:status  - check status
+/heartbeat:stop    - stop daemon
 ```
 
 After displaying the above, ask the user to answer each question:
@@ -72,7 +73,7 @@ After displaying the above, ask the user to answer each question:
 - **If user answers yes to #2 (Configure Telegram)**:
   - Ask: "What is your Telegram bot token?"
   - Ask: "What are the allowed Telegram user IDs? (comma-separated)"
-  - Ask: "What is the project path?"
-  - Set `telegram.token`, `telegram.allowedUserIds` (as array of numbers), and `telegram.projectPath` accordingly.
+  - Set `telegram.token` and `telegram.allowedUserIds` (as array of numbers) accordingly.
+  - Note: Telegram bot runs in-process with the daemon. All components (heartbeat, cron, telegram) share one Claude session.
 
 Update `.claude/heartbeat/settings.json` with their answers.

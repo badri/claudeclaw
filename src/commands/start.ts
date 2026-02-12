@@ -5,6 +5,7 @@ import { writeState, type StateData } from "../statusline";
 import { cronMatches, nextCronMatch } from "../cron";
 import { loadJobs } from "../jobs";
 import { writePidFile, cleanupPidFile } from "../pid";
+import { loadSettings } from "../config";
 
 const CLAUDE_DIR = join(process.cwd(), ".claude");
 const HEARTBEAT_DIR = join(CLAUDE_DIR, "heartbeat");
@@ -83,17 +84,8 @@ async function teardownStatusline() {
 
 // --- Main ---
 
-interface Settings {
-  heartbeat: {
-    enabled: boolean;
-    interval: number;
-    prompt: string;
-  };
-}
-
 export async function start() {
-  const settingsFile = Bun.file(join(HEARTBEAT_DIR, "settings.json"));
-  const settings: Settings = await settingsFile.json();
+  const settings = await loadSettings();
   const jobs = await loadJobs();
 
   await setupStatusline();
@@ -113,13 +105,38 @@ export async function start() {
   console.log(`  Jobs loaded: ${jobs.length}`);
   jobs.forEach((j) => console.log(`    - ${j.name} [${j.schedule}]`));
 
+  // Start Telegram bot in-process if configured
+  let telegramSend: ((chatId: number, text: string) => Promise<void>) | null = null;
+  if (settings.telegram.token) {
+    const { startPolling, sendMessage } = await import("./telegram");
+    startPolling();
+    telegramSend = (chatId, text) => sendMessage(settings.telegram.token, chatId, text);
+    console.log("  Telegram: enabled");
+  } else {
+    console.log("  Telegram: not configured");
+  }
+
+  async function runHeartbeat() {
+    const result = await run("heartbeat", settings.heartbeat.prompt);
+    if (telegramSend && settings.telegram.allowedUserIds.length > 0) {
+      const text = result.exitCode === 0
+        ? result.stdout || "(empty heartbeat)"
+        : `Heartbeat error (exit ${result.exitCode}): ${result.stderr || "Unknown"}`;
+      for (const userId of settings.telegram.allowedUserIds) {
+        telegramSend(userId, text).catch((err) =>
+          console.error(`[Telegram] Failed to forward heartbeat to ${userId}: ${err}`)
+        );
+      }
+    }
+  }
+
   let nextHeartbeatAt = 0;
   if (settings.heartbeat.enabled) {
     const ms = settings.heartbeat.interval * 60_000;
-    run("heartbeat", settings.heartbeat.prompt);
+    runHeartbeat();
     nextHeartbeatAt = Date.now() + ms;
     setInterval(() => {
-      run("heartbeat", settings.heartbeat.prompt);
+      runHeartbeat();
       nextHeartbeatAt = Date.now() + ms;
     }, ms);
   }
@@ -144,7 +161,18 @@ export async function start() {
     const now = new Date();
     for (const job of jobs) {
       if (cronMatches(job.schedule, now)) {
-        run(job.name, job.prompt);
+        run(job.name, job.prompt).then((result) => {
+          if (telegramSend && settings.telegram.allowedUserIds.length > 0) {
+            const text = result.exitCode === 0
+              ? `[${job.name}]\n${result.stdout || "(empty)"}`
+              : `[${job.name}] error (exit ${result.exitCode}): ${result.stderr || "Unknown"}`;
+            for (const userId of settings.telegram.allowedUserIds) {
+              telegramSend(userId, text).catch((err) =>
+                console.error(`[Telegram] Failed to forward ${job.name} to ${userId}: ${err}`)
+              );
+            }
+          }
+        });
       }
     }
     updateState();

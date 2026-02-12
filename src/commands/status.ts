@@ -127,7 +127,6 @@ export async function status(args: string[]) {
   if (args.includes("--all")) {
     await showAll();
   } else {
-    const running = await showStatus();
-    process.exit(running ? 0 : 1);
+    await showStatus();
   }
 }
