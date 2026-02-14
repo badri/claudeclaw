@@ -185,6 +185,13 @@ export const pageStyles = String.raw`    :root {
       letter-spacing: 0.03em;
       text-transform: uppercase;
     }
+    .quick-jobs-next {
+      margin-top: 6px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      color: #9fd6ff;
+      letter-spacing: 0.03em;
+    }
     .quick-job-grid {
       display: grid;
       grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
@@ -347,9 +354,8 @@ export const pageStyles = String.raw`    :root {
       max-height: 280px;
     }
     .quick-job-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
       gap: 10px;
       padding: 8px 10px;
       border: 1px solid #ffffff1d;
@@ -357,6 +363,24 @@ export const pageStyles = String.raw`    :root {
       background: #0b1422a8;
       font-family: "JetBrains Mono", monospace;
       font-size: 11px;
+    }
+    .quick-job-item-main {
+      min-width: 0;
+      display: grid;
+      gap: 4px;
+    }
+    .quick-job-item-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-width: 0;
+    }
+    .quick-job-item-prefix {
+      color: #a9dcff;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
     }
     .quick-job-item-time {
       color: #bde8ff;
@@ -367,7 +391,35 @@ export const pageStyles = String.raw`    :root {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      text-align: right;
+      text-align: left;
+    }
+    .quick-job-item-cooldown {
+      color: #a8f1ca;
+    }
+    .quick-job-delete {
+      align-self: center;
+      height: 28px;
+      padding: 0 10px;
+      border: 1px solid #ff7f7f40;
+      border-radius: 999px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #ffadad;
+      background: #3a141455;
+      cursor: pointer;
+      transition: background 0.16s ease, transform 0.16s ease, border-color 0.16s ease;
+    }
+    .quick-job-delete:hover {
+      background: #4d191970;
+      border-color: #ff8f8f6b;
+      transform: translateY(-1px);
+    }
+    .quick-job-delete:disabled {
+      opacity: 0.65;
+      cursor: wait;
+      transform: none;
     }
     .quick-jobs-empty {
       padding: 8px 10px;

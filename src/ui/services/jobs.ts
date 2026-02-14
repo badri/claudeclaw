@@ -37,3 +37,12 @@ export async function createQuickJob(input: QuickJobInput): Promise<{ name: stri
   await writeFile(path, content, "utf-8");
   return { name, schedule };
 }
+
+export async function deleteJob(name: string): Promise<void> {
+  const jobName = String(name || "").trim();
+  if (!/^[a-zA-Z0-9._-]+$/.test(jobName)) {
+    throw new Error("Invalid job name.");
+  }
+  const path = join(JOBS_DIR, `${jobName}.md`);
+  await Bun.file(path).delete();
+}

@@ -20,4 +20,5 @@ export interface StartWebUiOptions {
   port: number;
   getSnapshot: () => WebSnapshot;
   onHeartbeatEnabledChanged?: (enabled: boolean) => void | Promise<void>;
+  onJobsChanged?: () => void | Promise<void>;
 }

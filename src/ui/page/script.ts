@@ -24,6 +24,8 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
     const quickJobPrompt = $("quick-job-prompt");
     const quickJobSubmit = $("quick-job-submit");
     const quickJobStatus = $("quick-job-status");
+    const quickJobsStatus = $("quick-jobs-status");
+    const quickJobsNext = $("quick-jobs-next");
     const quickJobPreview = $("quick-job-preview");
     const quickJobCount = $("quick-job-count");
     const quickJobsList = $("quick-jobs-list");
@@ -154,12 +156,44 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
     function fmtDur(ms) {
       if (ms == null) return "n/a";
       const s = Math.floor(ms / 1000);
+      const d = Math.floor(s / 86400);
+      if (d > 0) {
+        const h = Math.floor((s % 86400) / 3600);
+        return d + "d " + h + "h";
+      }
       const h = Math.floor(s / 3600);
       const m = Math.floor((s % 3600) / 60);
       const ss = s % 60;
       if (h > 0) return h + "h " + m + "m";
       if (m > 0) return m + "m " + ss + "s";
       return ss + "s";
+    }
+
+    function cronTimeParts(schedule) {
+      const parts = String(schedule || "").trim().split(/\s+/);
+      if (parts.length < 2) return null;
+      const minute = Number(parts[0]);
+      const hour = Number(parts[1]);
+      if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+        return null;
+      }
+      return { hour, minute };
+    }
+
+    function nextRunAt(schedule, now) {
+      const parts = cronTimeParts(schedule);
+      if (!parts) return null;
+      const next = new Date(now);
+      next.setHours(parts.hour, parts.minute, 0, 0);
+      if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
+      return next;
+    }
+
+    function jobPrefix(name) {
+      const raw = String(name || "").trim();
+      if (!raw) return "job";
+      const cut = raw.indexOf("-");
+      return (cut > 0 ? raw.slice(0, cut) : raw).toUpperCase();
     }
 
     function clockFromSchedule(schedule) {
@@ -182,19 +216,51 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
     function renderJobsList(jobs) {
       if (!quickJobsList) return;
       const items = Array.isArray(jobs) ? jobs.slice() : [];
+      const now = new Date();
+
       if (!items.length) {
         quickJobsList.innerHTML = '<div class="quick-jobs-empty">No jobs yet.</div>';
+        if (quickJobsNext) quickJobsNext.textContent = "Next job in --";
         return;
       }
-      quickJobsList.innerHTML = items
-        .slice(-8)
-        .reverse()
-        .map((j) =>
+
+      const withNext = items
+        .map((j) => ({
+          ...j,
+          _nextAt: nextRunAt(j.schedule, now),
+        }))
+        .sort((a, b) => {
+          const ta = a._nextAt ? a._nextAt.getTime() : Number.POSITIVE_INFINITY;
+          const tb = b._nextAt ? b._nextAt.getTime() : Number.POSITIVE_INFINITY;
+          return ta - tb;
+        });
+
+      const nearest = withNext.find((j) => j._nextAt);
+      if (quickJobsNext) {
+        quickJobsNext.textContent = nearest && nearest._nextAt
+          ? ("Next job in " + fmtDur(nearest._nextAt.getTime() - now.getTime()))
+          : "Next job in --";
+      }
+
+      quickJobsList.innerHTML = withNext
+        .map((j) => {
+          const nextAt = j._nextAt;
+          const cooldown = nextAt ? fmtDur(nextAt.getTime() - now.getTime()) : "n/a";
+          const time = clockFromSchedule(j.schedule || "");
+          return (
           '<div class="quick-job-item">' +
-            '<div class="quick-job-item-time">' + esc(clockFromSchedule(j.schedule || "")) + "</div>" +
-            '<div class="quick-job-item-name">' + esc(j.name || "job") + "</div>" +
+            '<div class="quick-job-item-main">' +
+              '<div class="quick-job-item-head">' +
+                '<div class="quick-job-item-prefix">' + esc(jobPrefix(j.name)) + "</div>" +
+                '<div class="quick-job-item-time">' + esc(time || "--") + "</div>" +
+              "</div>" +
+              '<div class="quick-job-item-name">' + esc(j.name || "job") + "</div>" +
+              '<div class="quick-job-item-cooldown">Cooldown: ' + esc(cooldown) + "</div>" +
+            "</div>" +
+            '<button class="quick-job-delete" type="button" data-delete-job="' + esc(j.name || "") + '">Delete</button>' +
           "</div>"
-        )
+          );
+        })
         .join("");
     }
 
@@ -512,6 +578,28 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
       updateQuickJobUi();
     });
 
+    document.addEventListener("click", async (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const button = target.closest("[data-delete-job]");
+      if (!button || !(button instanceof HTMLButtonElement)) return;
+      const name = button.getAttribute("data-delete-job") || "";
+      if (!name) return;
+      button.disabled = true;
+      if (quickJobsStatus) quickJobsStatus.textContent = "Deleting job...";
+      try {
+        const res = await fetch("/api/jobs/" + encodeURIComponent(name), { method: "DELETE" });
+        const out = await res.json();
+        if (!out.ok) throw new Error(out.error || "delete failed");
+        if (quickJobsStatus) quickJobsStatus.textContent = "Deleted " + name;
+        await refreshState();
+      } catch (err) {
+        if (quickJobsStatus) quickJobsStatus.textContent = "Failed: " + String(err instanceof Error ? err.message : err);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
     if (quickOpenCreate) {
       quickOpenCreate.addEventListener("click", () => setQuickView("create", { scroll: true }));
     }
@@ -541,6 +629,7 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
           const out = await res.json();
           if (!out.ok) throw new Error(out.error || "failed");
           quickJobStatus.textContent = "Added to jobs list.";
+          if (quickJobsStatus) quickJobsStatus.textContent = "Added " + out.name;
           quickJobPrompt.value = "";
           updateQuickJobUi();
           setQuickView("jobs", { scroll: true });

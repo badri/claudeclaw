@@ -323,6 +323,12 @@ export async function start(args: string[] = []) {
             updateState();
             console.log(`[${ts()}] Heartbeat ${enabled ? "enabled" : "disabled"} from Web UI`);
           },
+          onJobsChanged: async () => {
+            currentJobs = await loadJobs();
+            scheduleHeartbeat();
+            updateState();
+            console.log(`[${ts()}] Jobs reloaded from Web UI`);
+          },
         });
       } catch (err) {
         lastError = err;

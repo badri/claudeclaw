@@ -3,7 +3,7 @@ import { clampInt, json } from "./http";
 import type { StartWebUiOptions, WebServerHandle } from "./types";
 import { buildState, buildTechnicalInfo, sanitizeSettings } from "./services/state";
 import { setHeartbeatEnabled } from "./services/settings";
-import { createQuickJob } from "./services/jobs";
+import { createQuickJob, deleteJob } from "./services/jobs";
 import { readLogs } from "./services/logs";
 
 export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
@@ -51,7 +51,20 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
         try {
           const body = await req.json();
           const result = await createQuickJob(body as { time?: unknown; prompt?: unknown });
+          if (opts.onJobsChanged) await opts.onJobsChanged();
           return json({ ok: true, ...result });
+        } catch (err) {
+          return json({ ok: false, error: String(err) });
+        }
+      }
+
+      if (url.pathname.startsWith("/api/jobs/") && req.method === "DELETE") {
+        try {
+          const encodedName = url.pathname.slice("/api/jobs/".length);
+          const name = decodeURIComponent(encodedName);
+          await deleteJob(name);
+          if (opts.onJobsChanged) await opts.onJobsChanged();
+          return json({ ok: true });
         } catch (err) {
           return json({ ok: false, error: String(err) });
         }

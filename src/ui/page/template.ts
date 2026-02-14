@@ -100,12 +100,14 @@ ${pageStyles}
           <div>
             <div class="quick-job-title">Jobs List</div>
             <div class="quick-job-sub">Scheduled runs loaded from runtime jobs</div>
+            <div class="quick-jobs-next" id="quick-jobs-next">Next job in --</div>
           </div>
           <button class="quick-open-create" id="quick-open-create" type="button">Create Job</button>
         </div>
         <div class="quick-jobs-list quick-jobs-list-main" id="quick-jobs-list">
           <div class="quick-jobs-empty">Loading jobs...</div>
         </div>
+        <div class="quick-status" id="quick-jobs-status"></div>
       </section>
       <form class="quick-job quick-view-hidden" id="quick-job-form">
         <div class="quick-job-head">
