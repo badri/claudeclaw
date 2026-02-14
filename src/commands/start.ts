@@ -3,7 +3,7 @@ import { join } from "path";
 import { run, bootstrap } from "../runner";
 import { writeState, type StateData } from "../statusline";
 import { cronMatches, nextCronMatch } from "../cron";
-import { loadJobs } from "../jobs";
+import { clearJobSchedule, loadJobs } from "../jobs";
 import { writePidFile, cleanupPidFile, checkExistingDaemon } from "../pid";
 import { initConfig, loadSettings, reloadSettings, resolvePrompt, type Settings } from "../config";
 import { startWebUi, type WebServerHandle } from "../web";
@@ -380,12 +380,6 @@ export async function start(args: string[] = []) {
     if (heartbeatTimer) clearTimeout(heartbeatTimer);
     heartbeatTimer = null;
 
-    // Skip heartbeat when cron jobs are configured — jobs replace the heartbeat
-    if (currentJobs.length > 0) {
-      nextHeartbeatAt = 0;
-      return;
-    }
-
     if (!currentSettings.heartbeat.enabled || !currentSettings.heartbeat.prompt) {
       nextHeartbeatAt = 0;
       return;
@@ -466,17 +460,11 @@ export async function start(args: string[] = []) {
       // Detect job changes
       const jobNames = newJobs.map((j) => `${j.name}:${j.schedule}:${j.prompt}`).sort().join("|");
       const oldJobNames = currentJobs.map((j) => `${j.name}:${j.schedule}:${j.prompt}`).sort().join("|");
-      const jobCountChanged = newJobs.length !== currentJobs.length;
       if (jobNames !== oldJobNames) {
         console.log(`[${ts()}] Jobs reloaded: ${newJobs.length} job(s)`);
         newJobs.forEach((j) => console.log(`    - ${j.name} [${j.schedule}]`));
       }
       currentJobs = newJobs;
-
-      // Reschedule heartbeat if jobs were added/removed (jobs suppress heartbeat)
-      if (jobCountChanged && !hbChanged) {
-        scheduleHeartbeat();
-      }
 
       // Telegram changes
       await initTelegram(newSettings.telegram.token);
@@ -516,7 +504,16 @@ export async function start(args: string[] = []) {
       if (cronMatches(job.schedule, now)) {
         resolvePrompt(job.prompt)
           .then((prompt) => run(job.name, prompt))
-          .then((r) => forwardToTelegram(job.name, r));
+          .then((r) => forwardToTelegram(job.name, r))
+          .finally(async () => {
+            if (job.daily) return;
+            try {
+              await clearJobSchedule(job.name);
+              console.log(`[${ts()}] Cleared schedule for one-time job: ${job.name}`);
+            } catch (err) {
+              console.error(`[${ts()}] Failed to clear schedule for ${job.name}:`, err);
+            }
+          });
       }
     }
     updateState();

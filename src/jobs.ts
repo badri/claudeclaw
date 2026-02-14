@@ -7,6 +7,11 @@ export interface Job {
   name: string;
   schedule: string;
   prompt: string;
+  daily: boolean;
+}
+
+function parseFrontmatterValue(raw: string): string {
+  return raw.trim().replace(/^["']|["']$/g, "");
 }
 
 function parseJobFile(name: string, content: string): Job | null {
@@ -18,21 +23,22 @@ function parseJobFile(name: string, content: string): Job | null {
 
   const frontmatter = match[1];
   const prompt = match[2].trim();
+  const lines = frontmatter.split("\n").map((l) => l.trim());
 
-  const scheduleLine = frontmatter
-    .split("\n")
-    .find((l) => l.startsWith("schedule:"));
+  const scheduleLine = lines.find((l) => l.startsWith("schedule:"));
   if (!scheduleLine) {
-    console.error(`No schedule found in job: ${name}`);
     return null;
   }
 
-  const schedule = scheduleLine
-    .replace("schedule:", "")
-    .trim()
-    .replace(/^["']|["']$/g, "");
+  const schedule = parseFrontmatterValue(scheduleLine.replace("schedule:", ""));
 
-  return { name, schedule, prompt };
+  const dailyLine = lines.find((l) => l.startsWith("daily:"));
+  const dailyRaw = dailyLine
+    ? parseFrontmatterValue(dailyLine.replace("daily:", "")).toLowerCase()
+    : "";
+  const daily = dailyRaw === "true" || dailyRaw === "yes" || dailyRaw === "1";
+
+  return { name, schedule, prompt, daily };
 }
 
 export async function loadJobs(): Promise<Job[]> {
@@ -51,4 +57,21 @@ export async function loadJobs(): Promise<Job[]> {
     if (job) jobs.push(job);
   }
   return jobs;
+}
+
+export async function clearJobSchedule(jobName: string): Promise<void> {
+  const path = join(JOBS_DIR, `${jobName}.md`);
+  const content = await Bun.file(path).text();
+  const match = content.match(/^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/);
+  if (!match) return;
+
+  const filteredFrontmatter = match[1]
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("schedule:"))
+    .join("\n")
+    .trim();
+
+  const body = match[2].trim();
+  const next = `---\n${filteredFrontmatter}\n---\n${body}\n`;
+  await Bun.write(path, next);
 }

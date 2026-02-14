@@ -120,12 +120,23 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
     function buildPills(state) {
       const pills = [];
 
+      pills.push({
+        cls: state.security.level === "unrestricted" ? "warn" : "ok",
+        icon: "🛡️",
+        label: "Security",
+        value: cap(state.security.level),
+      });
+
       if (state.heartbeat.enabled) {
+        const nextInMs = state.heartbeat.nextInMs;
+        const nextLabel = nextInMs == null
+          ? "Next run in --"
+          : ("Next run in " + fmtDur(nextInMs));
         pills.push({
           cls: "ok",
           icon: "💓",
           label: "Heartbeat",
-          value: "Every " + state.heartbeat.intervalMinutes + "m",
+          value: nextLabel,
         });
       } else {
         pills.push({
@@ -135,13 +146,6 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
           value: "Disabled",
         });
       }
-
-      pills.push({
-        cls: state.security.level === "unrestricted" ? "warn" : "ok",
-        icon: "🛡️",
-        label: "Security",
-        value: cap(state.security.level),
-      });
 
       pills.push({
         cls: state.telegram.configured ? "ok" : "warn",
