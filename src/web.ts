@@ -1,11 +1,12 @@
 import { join } from "path";
-import { readFile, readdir, stat, writeFile } from "fs/promises";
+import { mkdir, readFile, readdir, stat, writeFile } from "fs/promises";
 import type { Job } from "./jobs";
 import type { Settings } from "./config";
 import { peekSession } from "./sessions";
 
 const HEARTBEAT_DIR = join(process.cwd(), ".claude", "claudeclaw");
 const LOGS_DIR = join(HEARTBEAT_DIR, "logs");
+const JOBS_DIR = join(HEARTBEAT_DIR, "jobs");
 const SETTINGS_FILE = join(HEARTBEAT_DIR, "settings.json");
 const SESSION_FILE = join(HEARTBEAT_DIR, "session.json");
 const STATE_FILE = join(HEARTBEAT_DIR, "state.json");
@@ -68,6 +69,16 @@ export function startWebUi(opts: {
 
       if (url.pathname === "/api/technical-info") {
         return json(await buildTechnicalInfo(opts.getSnapshot()));
+      }
+
+      if (url.pathname === "/api/jobs/quick" && req.method === "POST") {
+        try {
+          const body = await req.json();
+          const result = await createQuickJob(body as { time?: unknown; prompt?: unknown });
+          return json({ ok: true, ...result });
+        } catch (err) {
+          return json({ ok: false, error: String(err) });
+        }
       }
 
       if (url.pathname === "/api/jobs") {
@@ -237,6 +248,37 @@ async function setHeartbeatEnabled(enabled: boolean): Promise<void> {
   await writeFile(SETTINGS_FILE, JSON.stringify(data, null, 2) + "\n");
 }
 
+async function createQuickJob(input: { time?: unknown; prompt?: unknown }): Promise<{ name: string; schedule: string }> {
+  const time = typeof input.time === "string" ? input.time.trim() : "";
+  const prompt = typeof input.prompt === "string" ? input.prompt.trim() : "";
+
+  if (!/^\d{2}:\d{2}$/.test(time)) {
+    throw new Error("Invalid time. Use HH:MM.");
+  }
+  if (!prompt) {
+    throw new Error("Prompt is required.");
+  }
+  if (prompt.length > 10_000) {
+    throw new Error("Prompt too long.");
+  }
+
+  const hour = Number(time.slice(0, 2));
+  const minute = Number(time.slice(3, 5));
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    throw new Error("Time out of range.");
+  }
+
+  const schedule = `${minute} ${hour} * * *`;
+  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
+  const name = `quick-${stamp}-${hour.toString().padStart(2, "0")}${minute.toString().padStart(2, "0")}`;
+  const path = join(JOBS_DIR, `${name}.md`);
+  const content = `---\nschedule: "${schedule}"\n---\n${prompt}\n`;
+
+  await mkdir(JOBS_DIR, { recursive: true });
+  await writeFile(path, content, "utf-8");
+  return { name, schedule };
+}
+
 function htmlPage(): string {
   return `<!doctype html>
 <html lang="en">
@@ -393,6 +435,76 @@ function htmlPage(): string {
       font-size: clamp(1rem, 2.1vw, 1.35rem);
       color: #e4ecf8;
       font-weight: 500;
+    }
+    .quick-job {
+      margin: 18px auto 0;
+      width: min(620px, calc(100vw - 36px));
+      padding: 12px;
+      border-radius: 14px;
+      background: #ffffff0d;
+      backdrop-filter: blur(8px);
+      display: grid;
+      gap: 9px;
+    }
+    .quick-job-head {
+      display: flex;
+      justify-content: center;
+      gap: 7px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #d7e4f7;
+      opacity: 0.9;
+    }
+    .quick-job-row {
+      display: grid;
+      grid-template-columns: 126px minmax(0, 1fr) 118px;
+      gap: 8px;
+      align-items: center;
+    }
+    .quick-input,
+    .quick-prompt,
+    .quick-submit {
+      border: 0;
+      border-radius: 10px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+      color: #eef4ff;
+      background: #0e1729b8;
+    }
+    .quick-input {
+      height: 40px;
+      padding: 0 10px;
+    }
+    .quick-prompt {
+      height: 40px;
+      padding: 10px;
+      resize: none;
+    }
+    .quick-submit {
+      height: 40px;
+      cursor: pointer;
+      background: #1e5a3dc4;
+      color: #aef4cf;
+      transition: transform 0.16s ease, background 0.16s ease, opacity 0.16s ease;
+    }
+    .quick-submit:hover {
+      transform: translateY(-1px);
+      background: #237349d6;
+    }
+    .quick-submit:disabled {
+      opacity: 0.7;
+      cursor: wait;
+      transform: none;
+    }
+    .quick-status {
+      min-height: 1.2em;
+      text-align: center;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      color: #cde0f7;
+      opacity: 0.9;
     }
     .settings-btn {
       position: fixed;
@@ -794,6 +906,13 @@ function htmlPage(): string {
       .settings-btn {
         top: 42px;
       }
+      .quick-job {
+        margin-top: 14px;
+        padding: 10px;
+      }
+      .quick-job-row {
+        grid-template-columns: 1fr;
+      }
       .dock-shell {
         bottom: 14px;
         width: min(980px, calc(100% - 12px));
@@ -898,6 +1017,15 @@ function htmlPage(): string {
       <div class="time" id="clock">--:--:--</div>
       <div class="date" id="date">Loading date...</div>
       <div class="message" id="message">Welcome back.</div>
+      <form class="quick-job" id="quick-job-form">
+        <div class="quick-job-head"><span>Quick Job</span><span>Daily Cron</span></div>
+        <div class="quick-job-row">
+          <input class="quick-input" id="quick-job-time" type="time" required />
+          <textarea class="quick-prompt" id="quick-job-prompt" placeholder="Prompt for this scheduled run..." required></textarea>
+          <button class="quick-submit" id="quick-job-submit" type="submit">Add Job</button>
+        </div>
+        <div class="quick-status" id="quick-job-status"></div>
+      </form>
     </section>
   </main>
 
@@ -936,6 +1064,11 @@ function htmlPage(): string {
     const clockToggle = $("clock-toggle");
     const hbInfoEl = $("hb-info");
     const clockInfoEl = $("clock-info");
+    const quickJobForm = $("quick-job-form");
+    const quickJobTime = $("quick-job-time");
+    const quickJobPrompt = $("quick-job-prompt");
+    const quickJobSubmit = $("quick-job-submit");
+    const quickJobStatus = $("quick-job-status");
     const jobsBubbleEl = $("jobs-bubble");
     const uptimeBubbleEl = $("uptime-bubble");
     let hbBusy = false;
@@ -1250,6 +1383,40 @@ function htmlPage(): string {
         localStorage.setItem("clock.format", use12Hour ? "12" : "24");
         renderClockToggle();
         renderClock();
+      });
+    }
+
+    if (quickJobTime && !quickJobTime.value) {
+      quickJobTime.value = "09:00";
+    }
+
+    if (quickJobForm && quickJobTime && quickJobPrompt && quickJobSubmit && quickJobStatus) {
+      quickJobForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const time = (quickJobTime.value || "").trim();
+        const prompt = (quickJobPrompt.value || "").trim();
+        if (!time || !prompt) {
+          quickJobStatus.textContent = "Time and prompt are required.";
+          return;
+        }
+        quickJobSubmit.disabled = true;
+        quickJobStatus.textContent = "Saving job...";
+        try {
+          const res = await fetch("/api/jobs/quick", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ time, prompt }),
+          });
+          const out = await res.json();
+          if (!out.ok) throw new Error(out.error || "failed");
+          quickJobStatus.textContent = "Saved: " + out.schedule + " (" + out.name + ")";
+          quickJobPrompt.value = "";
+          await refreshState();
+        } catch (err) {
+          quickJobStatus.textContent = "Failed: " + String(err instanceof Error ? err.message : err);
+        } finally {
+          quickJobSubmit.disabled = false;
+        }
       });
     }
 
