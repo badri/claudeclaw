@@ -635,19 +635,27 @@ function htmlPage(): string {
       background: linear-gradient(180deg, #a9d4ff, #789fce);
     }
 
-    .dock {
+    .dock-shell {
       position: fixed;
       left: 50%;
       bottom: 24px;
       transform: translateX(-50%);
-      width: min(980px, calc(100% - 24px));
+      width: min(1140px, calc(100% - 24px));
+      display: grid;
+      grid-template-columns: 84px minmax(0, 1fr) 84px;
+      gap: 12px;
+      align-items: center;
+      z-index: 2;
+    }
+
+    .dock {
+      width: 100%;
       padding: 6px 8px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       flex-wrap: nowrap;
       gap: 0;
-      z-index: 2;
       border-radius: 26px;
       border: 0;
       background: #ffffff08;
@@ -673,6 +681,36 @@ function htmlPage(): string {
     }
     .pill:last-child {
       border-right: 0;
+    }
+    .side-bubble {
+      width: 84px;
+      height: 84px;
+      border-radius: 999px;
+      background: #ffffff08;
+      backdrop-filter: blur(10px);
+      display: grid;
+      place-items: center;
+      text-align: center;
+      font-family: "JetBrains Mono", monospace;
+      color: #eef4ff;
+      line-height: 1.1;
+      padding: 8px;
+    }
+    .side-icon {
+      font-size: 13px;
+      opacity: 0.85;
+    }
+    .side-value {
+      font-size: 15px;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+    .side-label {
+      font-size: 10px;
+      opacity: 0.75;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 2px;
     }
     .pill-label {
       display: flex;
@@ -710,8 +748,13 @@ function htmlPage(): string {
       .stage {
         padding-bottom: 160px;
       }
-      .dock {
+      .dock-shell {
         bottom: 14px;
+        width: min(980px, calc(100% - 12px));
+        grid-template-columns: 70px minmax(0, 1fr) 70px;
+        gap: 8px;
+      }
+      .dock {
         border-radius: 18px;
         flex-wrap: wrap;
         gap: 4px 0;
@@ -722,6 +765,17 @@ function htmlPage(): string {
         flex: 1 1 50%;
         border-right: 0;
         border-bottom: 0;
+      }
+      .side-bubble {
+        width: 70px;
+        height: 70px;
+        padding: 6px;
+      }
+      .side-value {
+        font-size: 13px;
+      }
+      .side-label {
+        font-size: 9px;
       }
       .pill:last-child,
       .pill:nth-last-child(2) {
@@ -791,9 +845,21 @@ function htmlPage(): string {
     </section>
   </main>
 
-  <footer class="dock" id="dock" aria-live="polite">
-    <div class="pill">Connecting...</div>
-  </footer>
+  <div class="dock-shell">
+    <aside class="side-bubble" id="jobs-bubble" aria-live="polite">
+      <div class="side-icon">🗂️</div>
+      <div class="side-value">-</div>
+      <div class="side-label">Jobs</div>
+    </aside>
+    <footer class="dock" id="dock" aria-live="polite">
+      <div class="pill">Connecting...</div>
+    </footer>
+    <aside class="side-bubble" id="uptime-bubble" aria-live="polite">
+      <div class="side-icon">⏱️</div>
+      <div class="side-value">-</div>
+      <div class="side-label">Uptime</div>
+    </aside>
+  </div>
 
   <script>
     const $ = (id) => document.getElementById(id);
@@ -814,6 +880,8 @@ function htmlPage(): string {
     const clockToggle = $("clock-toggle");
     const hbInfoEl = $("hb-info");
     const clockInfoEl = $("clock-info");
+    const jobsBubbleEl = $("jobs-bubble");
+    const uptimeBubbleEl = $("uptime-bubble");
     let hbBusy = false;
     let use12Hour = localStorage.getItem("clock.format") === "12";
 
@@ -930,19 +998,6 @@ function htmlPage(): string {
           : "Not configured",
       });
 
-      pills.push({
-        cls: state.jobs.length ? "ok" : "warn",
-        icon: "🗂️",
-        label: "Jobs",
-        value: String(state.jobs.length),
-      });
-      pills.push({
-        cls: "ok",
-        icon: "⏱️",
-        label: "Uptime",
-        value: fmtDur(state.daemon.uptimeMs),
-      });
-
       return pills;
     }
 
@@ -968,8 +1023,26 @@ function htmlPage(): string {
             '<div class="pill-value">' + esc(p.value) + '</div>' +
           "</div>"
         ).join("");
+        if (jobsBubbleEl) {
+          jobsBubbleEl.innerHTML =
+            '<div class="side-icon">🗂️</div>' +
+            '<div class="side-value">' + esc(String(state.jobs?.length ?? 0)) + "</div>" +
+            '<div class="side-label">Jobs</div>';
+        }
+        if (uptimeBubbleEl) {
+          uptimeBubbleEl.innerHTML =
+            '<div class="side-icon">⏱️</div>' +
+            '<div class="side-value">' + esc(fmtDur(state.daemon?.uptimeMs ?? 0)) + "</div>" +
+            '<div class="side-label">Uptime</div>';
+        }
       } catch (err) {
         dockEl.innerHTML = '<div class="pill bad"><div class="pill-label"><span class="pill-icon">⚠️</span>Status</div><div class="pill-value">Offline</div></div>';
+        if (jobsBubbleEl) {
+          jobsBubbleEl.innerHTML = '<div class="side-icon">🗂️</div><div class="side-value">-</div><div class="side-label">Jobs</div>';
+        }
+        if (uptimeBubbleEl) {
+          uptimeBubbleEl.innerHTML = '<div class="side-icon">⏱️</div><div class="side-value">-</div><div class="side-label">Uptime</div>';
+        }
       }
     }
 
