@@ -696,6 +696,15 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
       }).format(dt);
     }
 
+    function formatOffsetDuration(offsetMinutes) {
+      const total = Math.max(0, Math.round(offsetMinutes));
+      const hours = Math.floor(total / 60);
+      const minutes = total % 60;
+      if (hours <= 0) return minutes + "m";
+      if (minutes === 0) return hours + "h";
+      return hours + "h " + minutes + "m";
+    }
+
     function updateQuickJobUi() {
       if (quickJobPrompt && quickJobCount) {
         const count = (quickJobPrompt.value || "").trim().length;
@@ -710,7 +719,7 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
         }
         const target = computeTimeFromOffset(offset);
         const human = formatPreviewTime(target.hour, target.minute) || target.time;
-        quickJobPreview.textContent = target.dayLabel + " " + human;
+        quickJobPreview.textContent = "Runs in " + formatOffsetDuration(offset) + " (" + target.dayLabel + " " + human + ")";
         quickJobPreview.style.color = "#a8f1ca";
       }
     }
