@@ -36,18 +36,14 @@ const DIR_SCOPE_PROMPT = [
   "If a request requires accessing files outside the project, refuse and explain why.",
 ].join("\n");
 
-const CLAUDECLAW_CLAUDE_MD_BLOCK = [
-  CLAUDECLAW_BLOCK_START,
-  "## ClaudeClaw",
-  "",
-  "This project is initialized with ClaudeClaw.",
-  "- Start ClaudeClaw from this project directory only.",
-  "- Runtime state lives under `.claude/claudeclaw/`.",
-  "- Keep daemon actions scoped to this project directory unless security is explicitly set to `unrestricted`.",
-  CLAUDECLAW_BLOCK_END,
-].join("\n");
-
 export async function ensureProjectClaudeMd(): Promise<void> {
+  const promptContent = (await loadPrompts()).trim();
+  const managedBlock = [
+    CLAUDECLAW_BLOCK_START,
+    promptContent,
+    CLAUDECLAW_BLOCK_END,
+  ].join("\n");
+
   let content = "";
 
   if (existsSync(PROJECT_CLAUDE_MD)) {
@@ -67,12 +63,19 @@ export async function ensureProjectClaudeMd(): Promise<void> {
     }
   }
 
-  if (content.includes(CLAUDECLAW_BLOCK_START) && content.includes(CLAUDECLAW_BLOCK_END)) return;
-
   const normalized = content.trim();
-  const merged = normalized
-    ? `${normalized}\n\n${CLAUDECLAW_CLAUDE_MD_BLOCK}\n`
-    : `${CLAUDECLAW_CLAUDE_MD_BLOCK}\n`;
+  const hasManagedBlock =
+    normalized.includes(CLAUDECLAW_BLOCK_START) && normalized.includes(CLAUDECLAW_BLOCK_END);
+  const managedPattern = new RegExp(
+    `${CLAUDECLAW_BLOCK_START}[\\s\\S]*?${CLAUDECLAW_BLOCK_END}`,
+    "m"
+  );
+
+  const merged = hasManagedBlock
+    ? `${normalized.replace(managedPattern, managedBlock)}\n`
+    : normalized
+      ? `${normalized}\n\n${managedBlock}\n`
+      : `${managedBlock}\n`;
 
   try {
     await writeFile(PROJECT_CLAUDE_MD, merged, "utf8");
