@@ -359,7 +359,8 @@ function htmlPage(): string {
   <main class="stage">
     <section class="hero">
       <svg class="logo-svg" viewBox="0 0 300 130" role="img" aria-label="Lobster ASCII art logo">
-        <text x="150" y="28" text-anchor="middle" xml:space="preserve">🦞         🦞</text>
+        <text x="86" y="28" text-anchor="middle">🦞</text>
+        <text x="214" y="28" text-anchor="middle">🦞</text>
         <text x="150" y="58" text-anchor="middle" xml:space="preserve">   ▐▛███▜▌</text>
         <text x="150" y="88" text-anchor="middle" xml:space="preserve">  ▝▜█████▛▘</text>
         <text x="150" y="118" text-anchor="middle" xml:space="preserve">    ▘▘ ▝▝</text>
