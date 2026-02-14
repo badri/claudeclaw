@@ -1,7 +1,7 @@
 import { writeFile, unlink, mkdir } from "fs/promises";
 import { join } from "path";
 import { fileURLToPath } from "url";
-import { run, bootstrap, ensureProjectClaudeMd } from "../runner";
+import { run, bootstrap, ensureProjectClaudeMd, loadHeartbeatPromptTemplate } from "../runner";
 import { writeState, type StateData } from "../statusline";
 import { cronMatches, nextCronMatch } from "../cron";
 import { clearJobSchedule, loadJobs } from "../jobs";
@@ -406,7 +406,7 @@ export async function start(args: string[] = []) {
     if (heartbeatTimer) clearTimeout(heartbeatTimer);
     heartbeatTimer = null;
 
-    if (!currentSettings.heartbeat.enabled || !currentSettings.heartbeat.prompt) {
+    if (!currentSettings.heartbeat.enabled) {
       nextHeartbeatAt = 0;
       return;
     }
@@ -415,9 +415,23 @@ export async function start(args: string[] = []) {
     nextHeartbeatAt = Date.now() + ms;
 
     function tick() {
-      resolvePrompt(currentSettings.heartbeat.prompt)
-        .then((prompt) => run("heartbeat", prompt))
-        .then((r) => forwardToTelegram("", r));
+      Promise.all([
+        resolvePrompt(currentSettings.heartbeat.prompt),
+        loadHeartbeatPromptTemplate(),
+      ])
+        .then(([prompt, template]) => {
+          const userPromptSection = prompt.trim()
+            ? `User custom heartbeat prompt:\n${prompt.trim()}`
+            : "";
+          const mergedPrompt = [template.trim(), userPromptSection]
+            .filter((part) => part.length > 0)
+            .join("\n\n");
+          if (!mergedPrompt) return null;
+          return run("heartbeat", mergedPrompt);
+        })
+        .then((r) => {
+          if (r) forwardToTelegram("", r);
+        });
       nextHeartbeatAt = Date.now() + ms;
     }
 

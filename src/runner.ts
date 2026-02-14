@@ -7,6 +7,7 @@ import { getSettings, type SecurityConfig } from "./config";
 const LOGS_DIR = join(process.cwd(), ".claude/claudeclaw/logs");
 // Resolve prompts relative to the claudeclaw installation, not the project dir
 const PROMPTS_DIR = join(import.meta.dir, "..", "prompts");
+const HEARTBEAT_PROMPT_FILE = join(PROMPTS_DIR, "heartbeat", "HEARTBEAT.md");
 const PROJECT_CLAUDE_MD = join(process.cwd(), "CLAUDE.md");
 const LEGACY_PROJECT_CLAUDE_MD = join(process.cwd(), ".claude", "CLAUDE.md");
 const CLAUDECLAW_BLOCK_START = "<!-- claudeclaw:managed:start -->";
@@ -114,12 +115,30 @@ function buildSecurityArgs(security: SecurityConfig): string[] {
 
 /** Load and concatenate all prompt files from the prompts/ directory. */
 async function loadPrompts(): Promise<string> {
+  async function collectPromptFiles(dir: string): Promise<string[]> {
+    const files: string[] = [];
+    const entries = await readdir(dir, { withFileTypes: true });
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name.toLowerCase() === "heartbeat") continue;
+        files.push(...await collectPromptFiles(fullPath));
+        continue;
+      }
+      if (entry.isFile()) {
+        if (entry.name.toLowerCase() === "heartbeat.md") continue;
+        files.push(fullPath);
+      }
+    }
+    return files;
+  }
+
   const parts: string[] = [];
   try {
-    const files = await readdir(PROMPTS_DIR);
-    for (const file of files.sort()) {
+    const files = await collectPromptFiles(PROMPTS_DIR);
+    for (const file of files) {
       try {
-        const content = await Bun.file(join(PROMPTS_DIR, file)).text();
+        const content = await Bun.file(file).text();
         if (content.trim()) parts.push(content.trim());
       } catch (e) {
         console.error(`[${new Date().toLocaleTimeString()}] Failed to read prompt file ${file}:`, e);
@@ -129,6 +148,15 @@ async function loadPrompts(): Promise<string> {
     console.error(`[${new Date().toLocaleTimeString()}] Failed to read prompts directory:`, e);
   }
   return parts.join("\n\n");
+}
+
+export async function loadHeartbeatPromptTemplate(): Promise<string> {
+  try {
+    const content = await Bun.file(HEARTBEAT_PROMPT_FILE).text();
+    return content.trim();
+  } catch {
+    return "";
+  }
 }
 
 async function execClaude(name: string, prompt: string): Promise<RunResult> {
