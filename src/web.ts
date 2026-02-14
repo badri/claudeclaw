@@ -260,7 +260,6 @@ function htmlPage(): string {
     .logo-art {
       width: 12ch;
       margin: 0 auto 18px;
-      transform: translateX(2ch);
       color: #dbe7ff;
       filter: drop-shadow(0 8px 20px #00000040);
     }
@@ -272,6 +271,7 @@ function htmlPage(): string {
       font-size: 18px;
       line-height: 1.1;
       margin-bottom: 2px;
+      transform: translateX(0.9ch);
     }
     .logo-body {
       margin: 0;
