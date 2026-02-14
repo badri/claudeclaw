@@ -83,14 +83,14 @@ Start the heartbeat daemon for this project. Follow these steps exactly:
 
    - **If Telegram IS configured** (header: "First contact"):
      - "Open in Claude Code (Recommended)" (description: "Meet your agent in Claude Code after launch")
-     - "Fire to Telegram (Trigger)" (description: "Run start with --trigger and forward result to Telegram")
+     - "Fire to Telegram" (description: "Send first contact to Telegram after launch")
 
    - **If Telegram is NOT configured** (header: "First contact"):
      - "Open in Claude Code (Recommended)" (description: "Meet your agent in Claude Code after launch")
      - "Skip" (description: "Skip for now — daemon keeps running, you can connect later")
 
 7. **Launch/start action**: Run command based on step 6 choice:
-   - **If user chose "Fire to Telegram (Trigger)"**:
+   - **If user chose "Fire to Telegram"**:
      ```bash
      mkdir -p .claude/claudeclaw/logs && nohup bun run ${CLAUDE_PLUGIN_ROOT}/src/index.ts start --web --trigger --telegram > .claude/claudeclaw/logs/daemon.log 2>&1 & echo $!
      ```
