@@ -241,15 +241,35 @@ export const pageStyles = String.raw`    :root {
       margin: 0;
     }
     .quick-input-wrap {
-      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 42px;
+      padding: 0 6px 0 11px;
+      border-radius: 10px;
+      border: 1px solid #ffffff2e;
+      background: #ffffff09;
     }
     .quick-input-wrap .quick-input {
-      padding-right: 76px;
+      height: 100%;
+      flex: 1 1 auto;
+      min-width: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      padding: 0;
     }
     .quick-input:focus-visible,
     .quick-prompt:focus-visible {
       outline: 1px solid #7dc5ff88;
       outline-offset: 1px;
+    }
+    .quick-input-wrap:focus-within {
+      outline: 1px solid #7dc5ff88;
+      outline-offset: 1px;
+    }
+    .quick-input-wrap .quick-input:focus-visible {
+      outline: none;
     }
     .quick-time-buttons {
       display: flex;
@@ -300,19 +320,16 @@ export const pageStyles = String.raw`    :root {
       user-select: none;
     }
     .quick-check-inline {
-      position: absolute;
-      right: 6px;
-      top: 6px;
-      bottom: 6px;
-      min-height: 0;
+      position: static;
+      min-height: 28px;
       padding: 0 10px;
-      z-index: 1;
+      flex: 0 0 auto;
     }
     .quick-check:hover {
       transform: translateY(-1px);
     }
     .quick-check-inline:hover {
-      transform: translateY(-1px);
+      transform: none;
     }
     .quick-check:has(input:checked) {
       background: #11342455;
