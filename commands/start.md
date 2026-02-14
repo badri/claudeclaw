@@ -47,8 +47,8 @@ Start the heartbeat daemon for this project. Follow these steps exactly:
 
    Use **AskUserQuestion** to ask all unconfigured sections at once (up to 3 questions in one call):
 
-   - **If heartbeat is NOT configured**: "Enable heartbeat? Example: I can remind you to drink water every 30 minutes, or you can fully customize what runs. Recommended if you want it 24/7 live." (header: "Heartbeat", options: "Yes" / "No")
-   - **If Telegram is NOT configured**: "Configure Telegram?" (header: "Telegram", options: "Yes" / "No")
+   - **If heartbeat is NOT configured**: "Enable heartbeat? Example: I can remind you to drink water every 30 minutes, or you can fully customize what runs." (header: "Heartbeat", options: "Yes" / "No")
+   - **If Telegram is NOT configured**: "Configure Telegram? Recommended if you want it 24/7 live." (header: "Telegram", options: "Yes" / "No")
    - **If security is NOT configured**: "What security level for Claude?" (header: "Security", options:
      - "Locked" (description: "Read-only — can only search and read files, no edits, bash, or web")
      - "Strict" (description: "Can edit files but no bash or web access")
