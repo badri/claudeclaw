@@ -454,7 +454,15 @@ function htmlPage(): string {
       font-family: "JetBrains Mono", monospace;
       font-size: 11px;
       cursor: pointer;
-      transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+      transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.16s ease, opacity 0.16s ease;
+    }
+    .hb-toggle:hover {
+      transform: translateY(-1px);
+    }
+    .hb-toggle:disabled {
+      cursor: wait;
+      opacity: 0.72;
+      transform: none;
     }
     .hb-toggle.on {
       background: #113424;
@@ -566,6 +574,7 @@ function htmlPage(): string {
     const settingsClose = $("settings-close");
     const hbToggle = $("hb-toggle");
     const clockToggle = $("clock-toggle");
+    let hbBusy = false;
     let use12Hour = localStorage.getItem("clock.format") === "12";
 
     const dateFmt = new Intl.DateTimeFormat(undefined, {
@@ -707,13 +716,18 @@ function htmlPage(): string {
         const res = await fetch("/api/settings");
         const data = await res.json();
         const on = Boolean(data?.heartbeat?.enabled);
-        hbToggle.textContent = on ? "Enabled" : "Disabled";
-        hbToggle.className = "hb-toggle " + (on ? "on" : "off");
-        hbToggle.dataset.enabled = on ? "1" : "0";
+        setHeartbeatUi(on);
       } catch (err) {
         hbToggle.textContent = "Error";
         hbToggle.className = "hb-toggle off";
       }
+    }
+
+    function setHeartbeatUi(on, label) {
+      if (!hbToggle) return;
+      hbToggle.textContent = label || (on ? "Enabled" : "Disabled");
+      hbToggle.className = "hb-toggle " + (on ? "on" : "off");
+      hbToggle.dataset.enabled = on ? "1" : "0";
     }
 
     if (settingsBtn && settingsModal) {
@@ -729,21 +743,26 @@ function htmlPage(): string {
 
     if (hbToggle) {
       hbToggle.addEventListener("click", async () => {
+        if (hbBusy) return;
         const current = hbToggle.dataset.enabled === "1";
-        hbToggle.textContent = "Saving...";
+        const next = !current;
+        hbBusy = true;
+        hbToggle.disabled = true;
+        setHeartbeatUi(next, next ? "Enabled" : "Disabled");
         try {
           const res = await fetch("/api/settings/heartbeat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ enabled: !current }),
+            body: JSON.stringify({ enabled: next }),
           });
           const out = await res.json();
           if (!out.ok) throw new Error(out.error || "save failed");
-          await loadSettings();
           await refreshState();
         } catch {
-          hbToggle.textContent = "Failed";
-          hbToggle.className = "hb-toggle off";
+          setHeartbeatUi(current, current ? "Enabled" : "Disabled");
+        } finally {
+          hbBusy = false;
+          hbToggle.disabled = false;
         }
       });
     }
