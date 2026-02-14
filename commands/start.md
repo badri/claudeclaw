@@ -78,30 +78,24 @@ Start the heartbeat daemon for this project. Follow these steps exactly:
 
    - **If Telegram IS configured** (header: "First contact"):
      - "Open in Claude Code (Recommended)" (description: "Meet your agent in Claude Code after launch")
-     - "Open Web UI" (description: "Start daemon with --web and open local dashboard in browser")
      - "Fire to Telegram (Trigger)" (description: "Run start with --trigger and forward result to Telegram")
 
    - **If Telegram is NOT configured** (header: "First contact"):
      - "Open in Claude Code (Recommended)" (description: "Meet your agent in Claude Code after launch")
-     - "Open Web UI" (description: "Start daemon with --web and open local dashboard in browser")
      - "Skip" (description: "Skip for now — daemon keeps running, you can connect later")
 
 6. **Launch/start action**: Run command based on step 5 choice:
    - **If user chose "Fire to Telegram (Trigger)"**:
      ```bash
-     mkdir -p .claude/claudeclaw/logs && nohup bun run ${CLAUDE_PLUGIN_ROOT}/src/index.ts start --trigger --telegram > .claude/claudeclaw/logs/daemon.log 2>&1 & echo $!
-     ```
-   - **If user chose "Open Web UI"**:
-     ```bash
-     mkdir -p .claude/claudeclaw/logs && nohup bun run ${CLAUDE_PLUGIN_ROOT}/src/index.ts start --web > .claude/claudeclaw/logs/daemon.log 2>&1 & echo $!
+     mkdir -p .claude/claudeclaw/logs && nohup bun run ${CLAUDE_PLUGIN_ROOT}/src/index.ts start --web --trigger --telegram > .claude/claudeclaw/logs/daemon.log 2>&1 & echo $!
      ```
    - **Otherwise**:
      ```bash
-     mkdir -p .claude/claudeclaw/logs && nohup bun run ${CLAUDE_PLUGIN_ROOT}/src/index.ts > .claude/claudeclaw/logs/daemon.log 2>&1 & echo $!
+     mkdir -p .claude/claudeclaw/logs && nohup bun run ${CLAUDE_PLUGIN_ROOT}/src/index.ts start --web > .claude/claudeclaw/logs/daemon.log 2>&1 & echo $!
      ```
    Use the description "Starting ClaudeClaw server" for this command.
    Wait 1 second, then check `cat .claude/claudeclaw/logs/daemon.log`. If it contains "Aborted: daemon already running", tell the user and exit.
-   - If "Open Web UI" was chosen, read `.claude/claudeclaw/settings.json` for `web.port` (default `4632` if missing) and `web.host` (default `127.0.0.1`).
+   - Read `.claude/claudeclaw/settings.json` for `web.port` (default `4632` if missing) and `web.host` (default `127.0.0.1`).
    - Then try to open the dashboard directly:
      - Linux: `xdg-open http://<HOST>:<PORT>`
      - macOS: `open http://<HOST>:<PORT>`
@@ -109,7 +103,7 @@ Start the heartbeat daemon for this project. Follow these steps exactly:
 
 7. **Capture session ID**: Read `.claude/claudeclaw/session.json` and extract the `sessionId` field. This is the shared Claude session used by the daemon for heartbeat, jobs, and Telegram.
 
-8. **Report**: Print the ASCII art below then show the PID, session, status info, one-shot usage tips, and Web UI URL when enabled.
+8. **Report**: Print the ASCII art below then show the PID, session, status info, one-shot usage tips, and the Web UI URL.
 
 CRITICAL: Output the ASCII art block below EXACTLY as-is inside a markdown code block. Do NOT re-indent, re-align, or adjust ANY whitespace. Copy every character verbatim. Only replace `<PID>` and `<WORKING_DIR>` with actual values.
 
@@ -136,7 +130,7 @@ claude --resume <SESSION_ID>
 ```
 Replace `<SESSION_ID>` with the session ID captured in step 7.
 
-If Web UI is enabled, show this direct URL:
+Show this direct Web UI URL:
 ```bash
 http://<WEB_HOST>:<WEB_PORT>
 ```
