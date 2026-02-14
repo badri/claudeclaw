@@ -1198,7 +1198,7 @@ function htmlPage(): string {
     startTypewriter();
 
     refreshState();
-    setInterval(refreshState, 5000);
+    setInterval(refreshState, 1000);
   </script>
 </body>
 </html>`;
