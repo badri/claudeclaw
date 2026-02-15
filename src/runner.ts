@@ -148,7 +148,7 @@ async function execClaude(name: string, prompt: string): Promise<RunResult> {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const logFile = join(LOGS_DIR, `${name}-${timestamp}.log`);
 
-  const { security } = getSettings();
+  const { security, model } = getSettings();
   const securityArgs = buildSecurityArgs(security);
 
   console.log(
@@ -159,6 +159,10 @@ async function execClaude(name: string, prompt: string): Promise<RunResult> {
   // Resumed session: use text output with --resume
   const outputFormat = isNew ? "json" : "text";
   const args = ["claude", "-p", prompt, "--output-format", outputFormat, ...securityArgs];
+
+  if (model) {
+    args.push("--model", model);
+  }
 
   if (!isNew) {
     args.push("--resume", existing.sessionId);

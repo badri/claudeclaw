@@ -9,6 +9,7 @@ const JOBS_DIR = join(HEARTBEAT_DIR, "jobs");
 const LOGS_DIR = join(HEARTBEAT_DIR, "logs");
 
 const DEFAULT_SETTINGS: Settings = {
+  model: "",
   timezone: "UTC",
   timezoneOffsetMinutes: 0,
   heartbeat: {
@@ -53,6 +54,7 @@ export interface SecurityConfig {
 }
 
 export interface Settings {
+  model: string;
   timezone: string;
   timezoneOffsetMinutes: number;
   heartbeat: HeartbeatConfig;
@@ -96,6 +98,7 @@ function parseSettings(raw: Record<string, any>): Settings {
   const parsedTimezone = parseTimezone(raw.timezone);
 
   return {
+    model: typeof raw.model === "string" ? raw.model.trim() : "",
     timezone: parsedTimezone,
     timezoneOffsetMinutes: parseTimezoneOffsetMinutes(raw.timezoneOffsetMinutes, parsedTimezone),
     heartbeat: {
