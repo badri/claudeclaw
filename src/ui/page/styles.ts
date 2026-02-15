@@ -1,6 +1,8 @@
 export const pageStyles = String.raw`    :root {
-      --bg-top: #142333;
-      --bg-bottom: #05070e;
+      --bg-top: #2a4262;
+      --bg-bottom: #0d1828;
+      --bg-spot-a: #7fb8ff3d;
+      --bg-spot-b: #95d1ff38;
       --text: #f0f4fb;
       --muted: #a8b4c5;
       --panel: #0b1220aa;
@@ -23,12 +25,34 @@ export const pageStyles = String.raw`    :root {
       font-family: "Space Grotesk", system-ui, sans-serif;
       color: var(--text);
       background:
-        radial-gradient(1400px 700px at 15% -10%, #4c88d433, transparent 60%),
-        radial-gradient(900px 500px at 85% 10%, #78c5ff2b, transparent 65%),
+        radial-gradient(1400px 700px at 15% -10%, var(--bg-spot-a), transparent 60%),
+        radial-gradient(900px 500px at 85% 10%, var(--bg-spot-b), transparent 65%),
         linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
       overflow-x: hidden;
       overflow-y: auto;
       position: relative;
+      transition: background 320ms ease;
+    }
+
+    body.day-mode {
+      --bg-top: #2a4262;
+      --bg-bottom: #0d1828;
+      --bg-spot-a: #7fb8ff3d;
+      --bg-spot-b: #95d1ff38;
+    }
+
+    body.night-mode {
+      --bg-top: #101b2a;
+      --bg-bottom: #02040a;
+      --bg-spot-a: #3557822b;
+      --bg-spot-b: #4a7ab42a;
+    }
+
+    body.night-mode .message {
+      color: #d2ddef;
+      font-family: "JetBrains Mono", monospace;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
     }
 
     .grain {

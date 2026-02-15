@@ -78,11 +78,23 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
     }
 
     function greetingForHour(h) {
-      if (h < 5) return "Night shift mode.";
+      if (h < 5) return "Night mode.";
       if (h < 12) return "Good morning.";
       if (h < 18) return "Good afternoon.";
       if (h < 22) return "Good evening.";
       return "Wind down and ship clean.";
+    }
+
+    function isNightHour(hour) {
+      return hour < 5 || hour >= 22;
+    }
+
+    function applyVisualMode(hour) {
+      const night = isNightHour(hour);
+      document.body.classList.toggle("night-mode", night);
+      document.body.classList.toggle("day-mode", !night);
+      document.body.dataset.mode = night ? "night" : "day";
+      msgEl.textContent = night ? "Night mode." : greetingForHour(hour);
     }
 
     const typePhrases = [
@@ -147,7 +159,7 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
         day: "numeric",
         year: "numeric",
       });
-      msgEl.textContent = greetingForHour(rawH);
+      applyVisualMode(rawH);
 
       // Subtle 1s pulse to keep the clock feeling alive.
       clockEl.classList.remove("ms-pulse");
