@@ -1,7 +1,6 @@
-import { spawnSync } from "node:child_process";
+import { OggOpusDecoder } from "ogg-opus-decoder";
 import { chmod, mkdir, rename, rm, stat, access, readdir, open } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 const WHISPER_MODEL = "base.en";
 const WHISPER_ROOT = join(process.cwd(), ".claude", "claudeclaw", "whisper");
@@ -9,7 +8,6 @@ const BIN_DIR = join(WHISPER_ROOT, "bin");
 const LIB_DIR = join(WHISPER_ROOT, "lib");
 const MODEL_FOLDER = join(WHISPER_ROOT, "models");
 const TMP_FOLDER = join(WHISPER_ROOT, "tmp");
-const OGG_MJS_CONVERTER = fileURLToPath(new URL("./ogg.mjs", import.meta.url));
 
 const MODEL_URL = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${WHISPER_MODEL}.bin`;
 
@@ -244,22 +242,80 @@ async function prepareWhisperAssets(printOutput: boolean): Promise<void> {
   console.log(`whisper warmup: complete in ${Date.now() - startedAt}ms`);
 }
 
-function decodeOggOpusToWavViaNode(inputPath: string, wavPath: string, log: WhisperDebugLog): void {
-  log(`voice decode: running node converter`);
-  const result = spawnSync("node", [OGG_MJS_CONVERTER, inputPath, wavPath], {
-    encoding: "utf8",
-  });
+async function decodeOggOpusToWav(inputPath: string, wavPath: string, log: WhisperDebugLog): Promise<void> {
+  log(`voice decode: decoding ogg opus inline`);
+  const decoder = new OggOpusDecoder({ forceStereo: false });
+  try {
+    await decoder.ready;
+    const inputBytes = new Uint8Array(await Bun.file(inputPath).arrayBuffer());
+    const decoded = await decoder.decodeFile(inputBytes);
+    if (!decoded.channelData.length) throw new Error("decoded audio is empty");
 
-  if (result.status !== 0) {
-    const stderr = result.stderr?.trim() || "";
-    const stdout = result.stdout?.trim() || "";
-    throw new Error(
-      `node decode failed (exit ${result.status ?? "unknown"})${stderr ? `: ${stderr}` : stdout ? `: ${stdout}` : ""}`
-    );
+    // Downmix to mono
+    let mono: Float32Array;
+    if (decoded.channelData.length === 1) {
+      mono = decoded.channelData[0];
+    } else {
+      const samples = decoded.channelData[0].length;
+      mono = new Float32Array(samples);
+      const scale = 1 / decoded.channelData.length;
+      for (let i = 0; i < samples; i++) {
+        let mixed = 0;
+        for (const ch of decoded.channelData) mixed += ch[i] ?? 0;
+        mono[i] = mixed * scale;
+      }
+    }
+
+    // Resample to 16kHz
+    const targetRate = 16000;
+    let resampled: Float32Array;
+    if (decoded.sampleRate === targetRate) {
+      resampled = mono;
+    } else {
+      const targetLength = Math.max(1, Math.round((mono.length * targetRate) / decoded.sampleRate));
+      resampled = new Float32Array(targetLength);
+      const ratio = decoded.sampleRate / targetRate;
+      for (let i = 0; i < targetLength; i++) {
+        const srcIdx = i * ratio;
+        const left = Math.floor(srcIdx);
+        const right = Math.min(left + 1, mono.length - 1);
+        const frac = srcIdx - left;
+        resampled[i] = mono[left] * (1 - frac) + mono[right] * frac;
+      }
+    }
+
+    // Encode 16-bit PCM WAV
+    const dataSize = resampled.length * 2;
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+    const writeAscii = (off: number, str: string) => {
+      for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i));
+    };
+    writeAscii(0, "RIFF");
+    view.setUint32(4, 36 + dataSize, true);
+    writeAscii(8, "WAVE");
+    writeAscii(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, targetRate, true);
+    view.setUint32(28, targetRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeAscii(36, "data");
+    view.setUint32(40, dataSize, true);
+    let off = 44;
+    for (let i = 0; i < resampled.length; i++) {
+      const s = Math.max(-1, Math.min(1, resampled[i]));
+      view.setInt16(off, s < 0 ? Math.round(s * 0x8000) : Math.round(s * 0x7fff), true);
+      off += 2;
+    }
+
+    await Bun.write(wavPath, new Uint8Array(buffer));
+    log(`voice decode: completed`);
+  } finally {
+    decoder.free();
   }
-
-  if (result.stderr?.trim()) log(`voice decode(node): ${result.stderr.trim()}`);
-  log(`voice decode: node converter completed`);
 }
 
 async function ensureWavInput(inputPath: string, log: WhisperDebugLog): Promise<string> {
@@ -272,7 +328,7 @@ async function ensureWavInput(inputPath: string, log: WhisperDebugLog): Promise<
   }
 
   const wavPath = join(TMP_FOLDER, `${basename(inputPath, extname(inputPath))}-${Date.now()}.wav`);
-  decodeOggOpusToWavViaNode(inputPath, wavPath, log);
+  await decodeOggOpusToWav(inputPath, wavPath, log);
   return wavPath;
 }
 
