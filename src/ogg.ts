@@ -75,7 +75,7 @@ async function main() {
   const inputPath = process.argv[2];
   const outputPath = process.argv[3];
   if (!inputPath || !outputPath) {
-    console.error("usage: node src/ogg-opus-convert-node.mjs <input.oga> <output.wav>");
+    console.error("usage: bun run src/ogg.ts <input.oga> <output.wav>");
     process.exit(2);
   }
 
