@@ -4,8 +4,6 @@
 
 ClaudeClaw turns your Claude Code into a personal assistant that never sleeps. It runs as a background daemon, executing tasks on a schedule, responding to messages on Telegram, transcribing voice commands, and integrating with any service you need.
 
-![ClaudeClaw Dashboard](images/dashboard.png)
-
 ## Why ClaudeClaw?
 
 **Zero API overhead.** No separate API keys, no token accounting, no billing surprises. Runs entirely within your Claude Code subscription with smart context management.
@@ -34,3 +32,7 @@ The setup wizard walks you through model, heartbeat, Telegram, and security, the
 - **Web Dashboard** monitor runs, edit jobs, view logs in real time
 - **Security Levels** four granular levels from read-only to full system access
 - **Model Selection** choose between Opus, Sonnet, or Haiku per project
+
+![ClaudeClaw Status Bar](images/bar.png)
+
+![ClaudeClaw Dashboard](images/dashboard.png)
