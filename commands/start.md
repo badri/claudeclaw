@@ -11,18 +11,31 @@ Start the heartbeat daemon for this project. Follow these steps exactly:
      - "CRITICAL BLOCKER: For security reasons, close this session and start a new one from the folder you want to initialize ClaudeClaw in."
    - Do not continue with any other step until they restart from a non-home project directory.
 
-2. **Ensure Bun is installed**: Run `which bun`. If it's not found:
-   - Tell the user Bun is required and will be auto-installed.
+2. **Runtime/dependency checker (Bun + Node + download deps)**:
    - Run:
      ```bash
-     curl -fsSL https://bun.sh/install | bash
+     which bun
+     which node
      ```
-   - Then source the shell profile to make `bun` available in the current session:
+   - If `bun` is missing:
+     - Tell the user Bun is required and will be auto-installed.
+     - Run:
+       ```bash
+       curl -fsSL https://bun.sh/install | bash
+       ```
+     - Then source the shell profile to make `bun` available in the current session:
+       ```bash
+       source ~/.bashrc 2>/dev/null || source ~/.zshrc 2>/dev/null || true
+       ```
+     - Verify again with `which bun`. If still not found, tell the user installation failed and to install manually from https://bun.sh, then exit.
+     - Tell the user Bun was auto-installed successfully.
+   - If `node` is missing:
+     - Tell the user Node.js is required for the OGG converter helper.
+     - Ask them to install Node.js LTS and rerun start, then exit.
+   - After both runtimes are available, ensure dependencies are downloaded:
      ```bash
-     source ~/.bashrc 2>/dev/null || source ~/.zshrc 2>/dev/null || true
+     bun install
      ```
-   - Verify `bun` is now available with `which bun`. If still not found, tell the user installation failed and to install manually from https://bun.sh, then exit.
-   - Tell the user Bun was auto-installed successfully.
 
 3. **Check existing config**: Read `.claude/claudeclaw/settings.json` (if it exists). Determine which sections are already configured:
    - **Heartbeat configured** = `heartbeat.enabled` is `true` AND `heartbeat.prompt` is non-empty
