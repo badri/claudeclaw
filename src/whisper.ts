@@ -1,7 +1,11 @@
-import { downloadWhisperModel, installWhisperCpp, transcribe } from "@remotion/install-whisper-cpp";
+import {
+  downloadWhisperModel,
+  installWhisperCpp,
+  transcribe,
+} from "@remotion/install-whisper-cpp";
 import { spawnSync } from "node:child_process";
-import { mkdir, rm, stat } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
+import { mkdir, rm, stat, access } from "node:fs/promises";
+import { basename, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const WHISPER_CPP_VERSION = "1.7.6";
@@ -17,6 +21,19 @@ let warmupPromise: Promise<void> | null = null;
 type WhisperDebugLog = (message: string) => void;
 
 function noopLog(): void {}
+
+function isVersionAtLeast(version: string, minimum: string): boolean {
+  const current = version.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const required = minimum.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const maxLength = Math.max(current.length, required.length);
+  for (let index = 0; index < maxLength; index += 1) {
+    const currentPart = current[index] ?? 0;
+    const requiredPart = required[index] ?? 0;
+    if (currentPart > requiredPart) return true;
+    if (currentPart < requiredPart) return false;
+  }
+  return true;
+}
 
 function decodeOggOpusToWavViaNode(inputPath: string, wavPath: string, log: WhisperDebugLog): void {
   log(`voice decode: running node converter`);
@@ -36,10 +53,26 @@ function decodeOggOpusToWavViaNode(inputPath: string, wavPath: string, log: Whis
   log(`voice decode: node converter completed`);
 }
 
+function getWhisperExecutablePathForVersion(whisperPath: string, whisperCppVersion: string): string {
+  const useWhisperCli = isVersionAtLeast(whisperCppVersion, "1.7.4");
+  const executableName = useWhisperCli ? "whisper-cli" : "main";
+  const executableFolder = useWhisperCli ? ["build", "bin"] : [];
+  const suffix = process.platform === "win32" ? ".exe" : "";
+  return join(resolve(process.cwd(), whisperPath), ...executableFolder, `./${executableName}${suffix}`);
+}
+
 async function prepareWhisperAssets(printOutput: boolean): Promise<void> {
   await mkdir(WHISPER_ROOT, { recursive: true });
   await mkdir(MODEL_FOLDER, { recursive: true });
   await mkdir(TMP_FOLDER, { recursive: true });
+
+  const whisperExecutablePath = getWhisperExecutablePathForVersion(WHISPER_PATH, WHISPER_CPP_VERSION);
+  try {
+    await access(whisperExecutablePath);
+  } catch {
+    // Recover from a partial/broken install where whisper.cpp exists but build output is missing.
+    await rm(WHISPER_PATH, { recursive: true, force: true });
+  }
 
   await installWhisperCpp({
     version: WHISPER_CPP_VERSION,
