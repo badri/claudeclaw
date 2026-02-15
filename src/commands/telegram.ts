@@ -515,7 +515,11 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
 
       if (voicePath) {
         try {
-          voiceTranscript = await transcribeAudioToText(voicePath);
+          debugLog(`Voice file saved: path=${voicePath}`);
+          voiceTranscript = await transcribeAudioToText(voicePath, {
+            debug: telegramDebug,
+            log: (message) => debugLog(message),
+          });
         } catch (err) {
           console.error(`[Telegram] Failed to transcribe voice for ${label}: ${err instanceof Error ? err.message : err}`);
         }

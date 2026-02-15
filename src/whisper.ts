@@ -1,6 +1,6 @@
 import { downloadWhisperModel, installWhisperCpp, transcribe } from "@remotion/install-whisper-cpp";
 import { OggOpusDecoder } from "ogg-opus-decoder";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 
 const WHISPER_CPP_VERSION = "1.7.6";
@@ -11,6 +11,10 @@ const MODEL_FOLDER = join(WHISPER_ROOT, "models");
 const TMP_FOLDER = join(WHISPER_ROOT, "tmp");
 
 let warmupPromise: Promise<void> | null = null;
+
+type WhisperDebugLog = (message: string) => void;
+
+function noopLog(): void {}
 
 function downmixToMono(channelData: Float32Array[]): Float32Array {
   if (channelData.length === 0) return new Float32Array();
@@ -82,20 +86,35 @@ function encodeMonoPcm16Wav(samples: Float32Array, sampleRate: number): Uint8Arr
   return new Uint8Array(buffer);
 }
 
-async function decodeOggOpusToWav(inputPath: string, wavPath: string): Promise<void> {
+async function decodeOggOpusToWav(inputPath: string, wavPath: string, log: WhisperDebugLog): Promise<void> {
   const decoder = new OggOpusDecoder({ forceStereo: false });
   try {
+    log(`voice decode: init decoder`);
     await decoder.ready;
+    log(`voice decode: decoder ready`);
     const inputBytes = new Uint8Array(await readFile(inputPath));
+    log(`voice decode: read ${inputBytes.length} bytes`);
     const decoded = await decoder.decodeFile(inputBytes);
+    log(
+      `voice decode: channels=${decoded.channelData.length} sampleRate=${decoded.sampleRate} samplesDecoded=${decoded.samplesDecoded} decodeErrors=${decoded.errors.length}`
+    );
+    if (decoded.errors.length > 0) {
+      const firstError = decoded.errors[0];
+      log(
+        `voice decode warning: ${firstError.message} frame=${firstError.frameNumber} inputBytes=${firstError.inputBytes} outputSamples=${firstError.outputSamples}`
+      );
+    }
     if (!decoded.channelData.length) throw new Error("decoded audio is empty");
 
     const mono = downmixToMono(decoded.channelData);
     const mono16k = resampleLinear(mono, decoded.sampleRate, 16000);
+    log(`voice decode: monoSamples=${mono.length} mono16kSamples=${mono16k.length}`);
     const wavBytes = encodeMonoPcm16Wav(mono16k, 16000);
     await writeFile(wavPath, wavBytes);
+    log(`voice decode: wrote wav ${wavPath} (${wavBytes.length} bytes)`);
   } finally {
     decoder.free();
+    log(`voice decode: decoder freed`);
   }
 }
 
@@ -116,8 +135,9 @@ async function prepareWhisperAssets(printOutput: boolean): Promise<void> {
   });
 }
 
-async function ensureWavInput(inputPath: string): Promise<string> {
+async function ensureWavInput(inputPath: string, log: WhisperDebugLog): Promise<string> {
   const ext = extname(inputPath).toLowerCase();
+  log(`voice input: path=${inputPath} ext=${ext || "(none)"}`);
   if (ext === ".wav") return inputPath;
 
   if (ext !== ".ogg" && ext !== ".oga") {
@@ -125,7 +145,7 @@ async function ensureWavInput(inputPath: string): Promise<string> {
   }
 
   const wavPath = join(TMP_FOLDER, `${basename(inputPath, extname(inputPath))}-${Date.now()}.wav`);
-  await decodeOggOpusToWav(inputPath, wavPath);
+  await decodeOggOpusToWav(inputPath, wavPath, log);
   return wavPath;
 }
 
@@ -140,11 +160,23 @@ export function warmupWhisperAssets(options?: { printOutput?: boolean }): Promis
   return warmupPromise;
 }
 
-export async function transcribeAudioToText(inputPath: string): Promise<string> {
+export async function transcribeAudioToText(
+  inputPath: string,
+  options?: { debug?: boolean; log?: WhisperDebugLog }
+): Promise<string> {
+  const log = options?.debug ? (options?.log ?? console.log) : noopLog;
   await warmupWhisperAssets();
+  log(`voice transcribe: warmup ready cwd=${process.cwd()} input=${inputPath}`);
+  try {
+    const inputStat = await stat(inputPath);
+    log(`voice transcribe: input size=${inputStat.size} bytes`);
+  } catch (err) {
+    log(`voice transcribe: failed to stat input - ${err instanceof Error ? err.message : String(err)}`);
+  }
 
-  const wavPath = await ensureWavInput(inputPath);
+  const wavPath = await ensureWavInput(inputPath, log);
   const shouldCleanup = wavPath !== inputPath;
+  log(`voice transcribe: using wav=${wavPath} cleanup=${shouldCleanup}`);
   try {
     const result = await transcribe({
       inputPath: wavPath,
@@ -156,14 +188,18 @@ export async function transcribeAudioToText(inputPath: string): Promise<string> 
       printOutput: false,
       language: null,
     });
+    log(`voice transcribe: whisper segments=${result.transcription.length}`);
 
-    return result.transcription
+    const transcript = result.transcription
       .map((item) => item.text)
       .join(" ")
       .replace(/\s+/g, " ")
       .trim();
+    log(`voice transcribe: transcript chars=${transcript.length}`);
+    return transcript;
   } finally {
     if (shouldCleanup) {
+      log(`voice transcribe: cleanup wav=${wavPath}`);
       await rm(wavPath, { force: true }).catch(() => {});
     }
   }
