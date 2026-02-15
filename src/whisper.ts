@@ -1,7 +1,9 @@
 import { downloadWhisperModel, installWhisperCpp, transcribe } from "@remotion/install-whisper-cpp";
 import { OggOpusDecoder } from "ogg-opus-decoder";
+import { spawnSync } from "node:child_process";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const WHISPER_CPP_VERSION = "1.7.6";
 const WHISPER_MODEL = "base.en";
@@ -9,6 +11,7 @@ const WHISPER_ROOT = join(process.cwd(), ".claude", "claudeclaw", "whisper");
 const WHISPER_PATH = join(WHISPER_ROOT, "whisper.cpp");
 const MODEL_FOLDER = join(WHISPER_ROOT, "models");
 const TMP_FOLDER = join(WHISPER_ROOT, "tmp");
+const OGG_NODE_CONVERTER = fileURLToPath(new URL("./ogg-opus-convert-node.mjs", import.meta.url));
 
 let warmupPromise: Promise<void> | null = null;
 
@@ -127,6 +130,24 @@ async function decodeOggOpusToWav(inputPath: string, wavPath: string, log: Whisp
   }
 }
 
+function decodeOggOpusToWavViaNode(inputPath: string, wavPath: string, log: WhisperDebugLog): void {
+  log(`voice decode: attempting node fallback converter`);
+  const result = spawnSync("node", [OGG_NODE_CONVERTER, inputPath, wavPath], {
+    encoding: "utf8",
+  });
+
+  if (result.status !== 0) {
+    const stderr = result.stderr?.trim() || "";
+    const stdout = result.stdout?.trim() || "";
+    throw new Error(
+      `node fallback decode failed (exit ${result.status ?? "unknown"})${stderr ? `: ${stderr}` : stdout ? `: ${stdout}` : ""}`
+    );
+  }
+
+  if (result.stderr?.trim()) log(`voice decode(node): ${result.stderr.trim()}`);
+  log(`voice decode: node fallback converter completed`);
+}
+
 async function prepareWhisperAssets(printOutput: boolean): Promise<void> {
   await mkdir(WHISPER_ROOT, { recursive: true });
   await mkdir(MODEL_FOLDER, { recursive: true });
@@ -154,7 +175,12 @@ async function ensureWavInput(inputPath: string, log: WhisperDebugLog): Promise<
   }
 
   const wavPath = join(TMP_FOLDER, `${basename(inputPath, extname(inputPath))}-${Date.now()}.wav`);
-  await decodeOggOpusToWav(inputPath, wavPath, log);
+  try {
+    await decodeOggOpusToWav(inputPath, wavPath, log);
+  } catch (err) {
+    log(`voice decode: bun path failed - ${err instanceof Error ? err.message : String(err)}`);
+    decodeOggOpusToWavViaNode(inputPath, wavPath, log);
+  }
   return wavPath;
 }
 
