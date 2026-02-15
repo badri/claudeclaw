@@ -10,7 +10,7 @@ const WHISPER_ROOT = join(process.cwd(), ".claude", "claudeclaw", "whisper");
 const WHISPER_PATH = join(WHISPER_ROOT, "whisper.cpp");
 const MODEL_FOLDER = join(WHISPER_ROOT, "models");
 const TMP_FOLDER = join(WHISPER_ROOT, "tmp");
-const OGG_TS_CONVERTER = fileURLToPath(new URL("./ogg.ts", import.meta.url));
+const OGG_MJS_CONVERTER = fileURLToPath(new URL("./ogg.mjs", import.meta.url));
 
 let warmupPromise: Promise<void> | null = null;
 
@@ -18,9 +18,9 @@ type WhisperDebugLog = (message: string) => void;
 
 function noopLog(): void {}
 
-function decodeOggOpusToWavViaBun(inputPath: string, wavPath: string, log: WhisperDebugLog): void {
-  log(`voice decode: running bun converter`);
-  const result = spawnSync("bun", ["run", OGG_TS_CONVERTER, inputPath, wavPath], {
+function decodeOggOpusToWavViaNode(inputPath: string, wavPath: string, log: WhisperDebugLog): void {
+  log(`voice decode: running node converter`);
+  const result = spawnSync("node", [OGG_MJS_CONVERTER, inputPath, wavPath], {
     encoding: "utf8",
   });
 
@@ -28,12 +28,12 @@ function decodeOggOpusToWavViaBun(inputPath: string, wavPath: string, log: Whisp
     const stderr = result.stderr?.trim() || "";
     const stdout = result.stdout?.trim() || "";
     throw new Error(
-      `bun decode failed (exit ${result.status ?? "unknown"})${stderr ? `: ${stderr}` : stdout ? `: ${stdout}` : ""}`
+      `node decode failed (exit ${result.status ?? "unknown"})${stderr ? `: ${stderr}` : stdout ? `: ${stdout}` : ""}`
     );
   }
 
-  if (result.stderr?.trim()) log(`voice decode(bun): ${result.stderr.trim()}`);
-  log(`voice decode: bun converter completed`);
+  if (result.stderr?.trim()) log(`voice decode(node): ${result.stderr.trim()}`);
+  log(`voice decode: node converter completed`);
 }
 
 async function prepareWhisperAssets(printOutput: boolean): Promise<void> {
@@ -63,7 +63,7 @@ async function ensureWavInput(inputPath: string, log: WhisperDebugLog): Promise<
   }
 
   const wavPath = join(TMP_FOLDER, `${basename(inputPath, extname(inputPath))}-${Date.now()}.wav`);
-  decodeOggOpusToWavViaBun(inputPath, wavPath, log);
+  decodeOggOpusToWavViaNode(inputPath, wavPath, log);
   return wavPath;
 }
 
