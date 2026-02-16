@@ -56,7 +56,7 @@ Start the heartbeat daemon for this project. Follow these steps exactly:
 
    Use **AskUserQuestion** to ask all unconfigured sections at once (up to 3 questions in one call):
 
-   - **Model** (always ask if `model` is empty/unset): "Which Claude model should ClaudeClaw use?" (header: "Model", options: "opus (default)", "sonnet", "haiku")
+   - **Model** (always ask if `model` is empty/unset): "Which Claude model should ClaudeClaw use?" (header: "Model", options: "opus (default)", "sonnet", "haiku", "glm")
    - **If heartbeat is NOT configured**: "Enable heartbeat? Example: I can remind you to drink water every 30 minutes, or you can fully customize what runs." (header: "Heartbeat", options: "Yes" / "No")
    - **If Telegram is NOT configured**: "Configure Telegram? Recommended if you want it 24/7 live." (header: "Telegram", options: "Yes" / "No")
    - **If security is NOT configured**: "What security level for Claude?" (header: "Security", options:
@@ -67,7 +67,8 @@ Start the heartbeat daemon for this project. Follow these steps exactly:
 
    Then, based on their answers:
 
-   - **Model**: Set `model` in settings to their choice (e.g. `"opus"`, `"sonnet"`, `"haiku"`). Default is `"opus"` if they don't pick.
+   - **Model**: Set `model` in settings to their choice (e.g. `"opus"`, `"sonnet"`, `"haiku"`, `"glm"`). Default is `"opus"` if they don't pick.
+   - **If model is `glm`**: Ask in normal free-form text for API token and set top-level `api` to that value (optional; user can skip). Only ask this token question when the selected model is `glm`.
 
    - **If yes to heartbeat**: Use AskUserQuestion again with one question:
      - "How often should it run in minutes?" (header: "Interval", options: "5", "15", "30 (Recommended)", "60")
@@ -148,6 +149,7 @@ Defaults: `WEB_HOST=127.0.0.1`, `WEB_PORT=4632` unless changed via settings or `
 ```json
 {
   "model": "opus",
+  "api": "",
   "timezone": "UTC+0",
   "heartbeat": {
     "enabled": true,
@@ -167,7 +169,8 @@ Defaults: `WEB_HOST=127.0.0.1`, `WEB_PORT=4632` unless changed via settings or `
   }
 }
 ```
-- `model` — Claude model to use (`opus`, `sonnet`, `haiku`, or full model ID). Empty string uses default.
+- `model` — Claude model to use (`opus`, `sonnet`, `haiku`, `glm`, or full model ID). Empty string uses default.
+- `api` — API token used when `model` is `glm` (passed as `ANTHROPIC_AUTH_TOKEN` for that provider path).
 - `timezone` — canonical app timezone as UTC offset text (example: `UTC+1`, `UTC-5`, `UTC+03:30`). Heartbeat windows, jobs, and UI all use this timezone.
 - `heartbeat.enabled` — whether the recurring heartbeat runs
 - `heartbeat.interval` — minutes between heartbeat runs

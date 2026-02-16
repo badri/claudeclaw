@@ -148,7 +148,7 @@ async function execClaude(name: string, prompt: string): Promise<RunResult> {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const logFile = join(LOGS_DIR, `${name}-${timestamp}.log`);
 
-  const { security, model } = getSettings();
+  const { security, model, api } = getSettings();
   const securityArgs = buildSecurityArgs(security);
 
   console.log(
@@ -194,11 +194,18 @@ async function execClaude(name: string, prompt: string): Promise<RunResult> {
 
   // Strip CLAUDECODE env var so child claude processes don't think they're nested
   const { CLAUDECODE: _, ...cleanEnv } = process.env;
+  const childEnv: Record<string, string> = { ...cleanEnv } as Record<string, string>;
+
+  if (model.trim().toLowerCase() === "glm") {
+    childEnv.ANTHROPIC_BASE_URL = "https://api.z.ai/api/anthropic";
+    childEnv.API_TIMEOUT_MS = "3000000";
+    if (api) childEnv.ANTHROPIC_AUTH_TOKEN = api;
+  }
 
   const proc = Bun.spawn(args, {
     stdout: "pipe",
     stderr: "pipe",
-    env: cleanEnv,
+    env: childEnv,
   });
 
   const [rawStdout, stderr] = await Promise.all([
