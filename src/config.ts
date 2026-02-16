@@ -11,6 +11,10 @@ const LOGS_DIR = join(HEARTBEAT_DIR, "logs");
 const DEFAULT_SETTINGS: Settings = {
   model: "",
   api: "",
+  fallback: {
+    model: "",
+    api: "",
+  },
   timezone: "UTC",
   timezoneOffsetMinutes: 0,
   heartbeat: {
@@ -57,12 +61,18 @@ export interface SecurityConfig {
 export interface Settings {
   model: string;
   api: string;
+  fallback: ModelConfig;
   timezone: string;
   timezoneOffsetMinutes: number;
   heartbeat: HeartbeatConfig;
   telegram: TelegramConfig;
   security: SecurityConfig;
   web: WebConfig;
+}
+
+export interface ModelConfig {
+  model: string;
+  api: string;
 }
 
 export interface WebConfig {
@@ -102,6 +112,10 @@ function parseSettings(raw: Record<string, any>): Settings {
   return {
     model: typeof raw.model === "string" ? raw.model.trim() : "",
     api: typeof raw.api === "string" ? raw.api.trim() : "",
+    fallback: {
+      model: typeof raw.fallback?.model === "string" ? raw.fallback.model.trim() : "",
+      api: typeof raw.fallback?.api === "string" ? raw.fallback.api.trim() : "",
+    },
     timezone: parsedTimezone,
     timezoneOffsetMinutes: parseTimezoneOffsetMinutes(raw.timezoneOffsetMinutes, parsedTimezone),
     heartbeat: {
