@@ -69,7 +69,8 @@ async function runClaudeOnce(
   baseEnv: Record<string, string>
 ): Promise<{ rawStdout: string; stderr: string; exitCode: number }> {
   const args = [...baseArgs];
-  if (model.trim()) args.push("--model", model.trim());
+  const normalizedModel = model.trim().toLowerCase();
+  if (model.trim() && normalizedModel !== "glm") args.push("--model", model.trim());
 
   const proc = Bun.spawn(args, {
     stdout: "pipe",
