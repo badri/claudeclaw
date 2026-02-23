@@ -4,7 +4,7 @@ import { existsSync } from "fs";
 import { getSession, createSession } from "./sessions";
 import { getSettings, type ModelConfig, type SecurityConfig } from "./config";
 import { buildClockPromptPrefix } from "./timezone";
-import { LOGS_DIR, MEMORY_DIR, AGENTS_MD, SOUL_MD, MEMORY_MD, MEMORY_MCP_CONFIG } from "./paths";
+import { LOGS_DIR, MEMORY_DIR, AGENTS_MD, SOUL_MD, MEMORY_MD, MEMORY_MCP_CONFIG, BROWSER_MCP_CONFIG } from "./paths";
 
 // Resolve prompts relative to the claudeclaw installation, not the project dir
 const PROMPTS_DIR = join(import.meta.dir, "..", "prompts");
@@ -238,6 +238,28 @@ export async function writeMemoryMcpConfig(): Promise<void> {
     await writeFile(MEMORY_MCP_CONFIG, JSON.stringify(config, null, 2), "utf8");
   } catch (e) {
     console.error(`[${new Date().toLocaleTimeString()}] Failed to write memory MCP config:`, e);
+  }
+}
+
+/**
+ * Write the MCP config file that registers the @playwright/mcp browser server.
+ * Called once at startup when settings.browser.enabled is true.
+ */
+export async function writeBrowserMcpConfig(): Promise<void> {
+  // Resolve playwright-mcp binary from this package's node_modules
+  const playwrightMcp = join(import.meta.dir, "..", "node_modules", ".bin", "playwright-mcp");
+  const config = {
+    mcpServers: {
+      "claudeclaw-browser": {
+        command: playwrightMcp,
+        args: [],
+      },
+    },
+  };
+  try {
+    await writeFile(BROWSER_MCP_CONFIG, JSON.stringify(config, null, 2), "utf8");
+  } catch (e) {
+    console.error(`[${new Date().toLocaleTimeString()}] Failed to write browser MCP config:`, e);
   }
 }
 
