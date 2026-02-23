@@ -26,6 +26,7 @@ const DEFAULT_SETTINGS: Settings = {
     embeddings: { provider: "none", model: "", api: "", baseUrl: "" },
   },
   browser: { enabled: false, engine: "chromium" },
+  agents: { default: "main", list: [] },
 };
 
 export interface HeartbeatExcludeWindow {
@@ -58,6 +59,24 @@ export interface SecurityConfig {
   disallowedTools: string[];
 }
 
+export interface AgentConfig {
+  /** Unique slug, e.g. 'main', 'content', 'ideas' */
+  id: string;
+  /** Human-readable display name */
+  name?: string;
+  /** Inline system prompt text or path to a .md file */
+  systemPrompt?: string;
+  /** Optional workspace directory override; defaults to ~/.claudeclaw/agents/<id>/ */
+  workspace?: string;
+}
+
+export interface AgentsConfig {
+  /** Agent id to use when none is specified. Default: 'main' */
+  default: string;
+  /** Explicitly configured agents. The 'main' agent always exists implicitly. */
+  list: AgentConfig[];
+}
+
 export interface Settings {
   model: string;
   api: string;
@@ -70,6 +89,7 @@ export interface Settings {
   web: WebConfig;
   memory: MemoryConfig;
   browser: BrowserConfig;
+  agents: AgentsConfig;
 }
 
 export interface ModelConfig {
@@ -177,7 +197,30 @@ function parseSettings(raw: Record<string, any>): Settings {
       embeddings: parseEmbeddingsConfig(raw.memory?.embeddings),
     },
     browser: parseBrowserConfig(raw.browser),
+    agents: parseAgentsConfig(raw.agents),
   };
+}
+
+function parseAgentConfig(raw: unknown): AgentConfig | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const id = typeof r.id === "string" ? r.id.trim() : "";
+  if (!id) return null;
+  return {
+    id,
+    name: typeof r.name === "string" ? r.name.trim() : undefined,
+    systemPrompt: typeof r.systemPrompt === "string" ? r.systemPrompt.trim() : undefined,
+    workspace: typeof r.workspace === "string" ? r.workspace.trim() : undefined,
+  };
+}
+
+function parseAgentsConfig(raw: unknown): AgentsConfig {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const defaultAgent = typeof r.default === "string" ? r.default.trim() || "main" : "main";
+  const list = Array.isArray(r.list)
+    ? r.list.map(parseAgentConfig).filter((a): a is AgentConfig => a !== null)
+    : [];
+  return { default: defaultAgent, list };
 }
 
 const VALID_BROWSER_ENGINES = new Set<BrowserEngine>(["chromium", "lightpanda"]);
