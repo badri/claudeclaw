@@ -4,6 +4,7 @@ import { clear } from "./commands/clear";
 import { status } from "./commands/status";
 import { telegram } from "./commands/telegram";
 import { send } from "./commands/send";
+import { memory } from "./commands/memory";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -22,6 +23,8 @@ if (command === "--stop-all") {
   telegram();
 } else if (command === "send") {
   send(args.slice(1));
+} else if (command === "memory") {
+  memory(args.slice(1));
 } else {
   start();
 }

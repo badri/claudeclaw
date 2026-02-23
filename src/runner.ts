@@ -204,8 +204,9 @@ async function loadPrompts(): Promise<string> {
     if (user.trim()) parts.push(user.trim());
   } catch {}
 
-  // Load persistent memory if it exists
+  // Load persistent memory if it exists (auto-compact first if oversized)
   if (existsSync(MEMORY_MD)) {
+    await compactMemoryIfNeeded();
     try {
       const memory = await Bun.file(MEMORY_MD).text();
       if (memory.trim()) {
@@ -215,6 +216,42 @@ async function loadPrompts(): Promise<string> {
   }
 
   return parts.join("\n\n");
+}
+
+/**
+ * Auto-compact MEMORY.md if it exceeds MAX_MEMORY_CHARS characters.
+ * Keeps the header line(s) and trims oldest lines from the top until it fits.
+ * Prepends a note that older entries were removed.
+ */
+const MAX_MEMORY_CHARS = 16000; // ~4000 tokens
+
+export async function compactMemoryIfNeeded(): Promise<void> {
+  if (!existsSync(MEMORY_MD)) return;
+  try {
+    const content = await Bun.file(MEMORY_MD).text();
+    if (content.length <= MAX_MEMORY_CHARS) return;
+
+    // Split into lines, keep as many lines from the end as fit
+    const lines = content.split("\n");
+    const notice = "<!-- older entries removed by auto-compact -->";
+
+    // Find how many trailing lines fit within limit (leaving room for the notice line)
+    const budget = MAX_MEMORY_CHARS - notice.length - 2;
+    let kept = 0;
+    let total = 0;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const added = lines[i].length + 1; // +1 for newline
+      if (total + added > budget) break;
+      total += added;
+      kept++;
+    }
+
+    const trimmed = [notice, ...lines.slice(lines.length - kept)].join("\n");
+    await Bun.write(MEMORY_MD, trimmed);
+    console.log(`[${new Date().toLocaleTimeString()}] MEMORY.md compacted (${content.length} → ${trimmed.length} chars)`);
+  } catch {
+    // best-effort — never fail a run
+  }
 }
 
 /** Append a dated entry to the daily journal under ~/.claudeclaw/workspace/memory/. */
