@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { join } from "path";
+import { homedir } from "os";
 import { existsSync } from "fs";
 import { getSession, createSession } from "./sessions";
 import { getSettings, type ModelConfig, type SecurityConfig } from "./config";
@@ -352,9 +353,26 @@ async function execClaude(name: string, prompt: string): Promise<RunResult> {
     args.push("--resume", existing.sessionId);
   }
 
-  // Attach memory MCP server if its config file exists
-  if (existsSync(MEMORY_MCP_CONFIG)) {
+  // Attach MCP server configs. Merge into a single file when both are active
+  // because claude CLI only accepts one --mcp-config flag.
+  const hasMemory = existsSync(MEMORY_MCP_CONFIG);
+  const hasBrowser = existsSync(BROWSER_MCP_CONFIG);
+  if (hasMemory && hasBrowser) {
+    const mcpPath = join(homedir(), ".claudeclaw", "mcp.json");
+    try {
+      const memCfg = JSON.parse(await readFile(MEMORY_MCP_CONFIG, "utf8"));
+      const brwCfg = JSON.parse(await readFile(BROWSER_MCP_CONFIG, "utf8"));
+      const merged = { mcpServers: { ...memCfg.mcpServers, ...brwCfg.mcpServers } };
+      await writeFile(mcpPath, JSON.stringify(merged, null, 2), "utf8");
+      args.push("--mcp-config", mcpPath);
+    } catch (e) {
+      console.error(`[${new Date().toLocaleTimeString()}] Failed to merge MCP configs:`, e);
+      args.push("--mcp-config", MEMORY_MCP_CONFIG);
+    }
+  } else if (hasMemory) {
     args.push("--mcp-config", MEMORY_MCP_CONFIG);
+  } else if (hasBrowser) {
+    args.push("--mcp-config", BROWSER_MCP_CONFIG);
   }
 
   // Build the appended system prompt: prompt files + directory scoping
