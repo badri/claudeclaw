@@ -3,7 +3,7 @@ import { join } from "path";
 import { homedir } from "os";
 import { existsSync } from "fs";
 import { getSession, createSession } from "./sessions";
-import { getSettings, type ModelConfig, type SecurityConfig } from "./config";
+import { getSettings, type ModelConfig, type SecurityConfig, type BrowserConfig } from "./config";
 import { buildClockPromptPrefix } from "./timezone";
 import { LOGS_DIR, MEMORY_DIR, AGENTS_MD, SOUL_MD, MEMORY_MD, MEMORY_MCP_CONFIG, BROWSER_MCP_CONFIG } from "./paths";
 
@@ -145,7 +145,20 @@ export async function ensureProjectClaudeMd(): Promise<void> {
   }
 }
 
-function buildSecurityArgs(security: SecurityConfig): string[] {
+// All tools exposed by @playwright/mcp — added to allowedTools when browser is enabled.
+const PLAYWRIGHT_TOOLS = [
+  "browser_click", "browser_close", "browser_console_messages", "browser_drag",
+  "browser_evaluate", "browser_file_upload", "browser_fill_form", "browser_generate_locator",
+  "browser_handle_dialog", "browser_hover", "browser_install", "browser_mouse_click_xy",
+  "browser_mouse_down", "browser_mouse_drag_xy", "browser_mouse_move_xy", "browser_mouse_up",
+  "browser_mouse_wheel", "browser_navigate", "browser_navigate_back", "browser_network_requests",
+  "browser_pdf_save", "browser_press_key", "browser_resize", "browser_run_code",
+  "browser_select_option", "browser_snapshot", "browser_tabs", "browser_take_screenshot",
+  "browser_type", "browser_verify_element_visible", "browser_verify_list_visible",
+  "browser_verify_text_visible", "browser_verify_value", "browser_wait_for",
+];
+
+function buildSecurityArgs(security: SecurityConfig, browser?: BrowserConfig): string[] {
   const args: string[] = ["--dangerously-skip-permissions"];
 
   switch (security.level) {
@@ -163,11 +176,17 @@ function buildSecurityArgs(security: SecurityConfig): string[] {
       break;
   }
 
-  if (security.allowedTools.length > 0) {
-    args.push("--allowedTools", security.allowedTools.join(" "));
+  // Collect all allowedTools: user-configured + playwright tools (when browser enabled)
+  const allowedTools = [...security.allowedTools];
+  if (browser?.enabled && security.level !== "unrestricted") {
+    allowedTools.push(...PLAYWRIGHT_TOOLS);
+  }
+
+  if (allowedTools.length > 0) {
+    args.push("--allowedTools", allowedTools.join(","));
   }
   if (security.disallowedTools.length > 0) {
-    args.push("--disallowedTools", security.disallowedTools.join(" "));
+    args.push("--disallowedTools", security.disallowedTools.join(","));
   }
 
   return args;
@@ -332,13 +351,13 @@ async function execClaude(name: string, prompt: string): Promise<RunResult> {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const logFile = join(LOGS_DIR, `${name}-${timestamp}.log`);
 
-  const { security, model, api, fallback } = getSettings();
+  const { security, model, api, fallback, browser } = getSettings();
   const primaryConfig: ModelConfig = { model, api };
   const fallbackConfig: ModelConfig = {
     model: fallback?.model ?? "",
     api: fallback?.api ?? "",
   };
-  const securityArgs = buildSecurityArgs(security);
+  const securityArgs = buildSecurityArgs(security, browser);
 
   console.log(
     `[${new Date().toLocaleTimeString()}] Running: ${name} (${isNew ? "new session" : `resume ${existing.sessionId.slice(0, 8)}`}, security: ${security.level})`
