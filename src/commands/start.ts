@@ -2,7 +2,7 @@ import { writeFile, unlink, mkdir } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
-import { run, runUserMessage, bootstrap, ensureProjectClaudeMd, loadHeartbeatPromptTemplate, writeMemoryMcpConfig } from "../runner";
+import { run, runUserMessage, bootstrap, ensureProjectClaudeMd, loadHeartbeatPromptTemplate, writeMemoryMcpConfig, writeBrowserMcpConfig } from "../runner";
 import { writeState, type StateData } from "../statusline";
 import { cronMatches, nextCronMatch } from "../cron";
 import { clearJobSchedule, loadJobs } from "../jobs";
@@ -261,9 +261,10 @@ export async function start(args: string[] = []) {
     }
 
     await initConfig();
-    await loadSettings();
+    const settings = await loadSettings();
     await ensureProjectClaudeMd();
     await writeMemoryMcpConfig();
+    if (settings.browser.enabled) await writeBrowserMcpConfig();
     const result = await runUserMessage("prompt", payload);
     console.log(result.stdout);
     if (result.exitCode !== 0) process.exit(result.exitCode);
@@ -302,6 +303,7 @@ export async function start(args: string[] = []) {
   const settings = await loadSettings();
   await ensureProjectClaudeMd();
   await writeMemoryMcpConfig();
+  if (settings.browser.enabled) await writeBrowserMcpConfig();
   const jobs = await loadJobs();
   const webEnabled = webFlag || webPortFlag !== null || settings.web.enabled;
   const webPort = webPortFlag ?? settings.web.port;
