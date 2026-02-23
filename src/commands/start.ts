@@ -2,7 +2,7 @@ import { writeFile, unlink, mkdir } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
-import { run, runUserMessage, bootstrap, ensureProjectClaudeMd, loadHeartbeatPromptTemplate } from "../runner";
+import { run, runUserMessage, bootstrap, ensureProjectClaudeMd, loadHeartbeatPromptTemplate, writeMemoryMcpConfig } from "../runner";
 import { writeState, type StateData } from "../statusline";
 import { cronMatches, nextCronMatch } from "../cron";
 import { clearJobSchedule, loadJobs } from "../jobs";
@@ -263,6 +263,7 @@ export async function start(args: string[] = []) {
     await initConfig();
     await loadSettings();
     await ensureProjectClaudeMd();
+    await writeMemoryMcpConfig();
     const result = await runUserMessage("prompt", payload);
     console.log(result.stdout);
     if (result.exitCode !== 0) process.exit(result.exitCode);
@@ -300,6 +301,7 @@ export async function start(args: string[] = []) {
   await initConfig();
   const settings = await loadSettings();
   await ensureProjectClaudeMd();
+  await writeMemoryMcpConfig();
   const jobs = await loadJobs();
   const webEnabled = webFlag || webPortFlag !== null || settings.web.enabled;
   const webPort = webPortFlag ?? settings.web.port;

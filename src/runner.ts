@@ -4,7 +4,7 @@ import { existsSync } from "fs";
 import { getSession, createSession } from "./sessions";
 import { getSettings, type ModelConfig, type SecurityConfig } from "./config";
 import { buildClockPromptPrefix } from "./timezone";
-import { LOGS_DIR, MEMORY_DIR, AGENTS_MD, SOUL_MD, MEMORY_MD } from "./paths";
+import { LOGS_DIR, MEMORY_DIR, AGENTS_MD, SOUL_MD, MEMORY_MD, MEMORY_MCP_CONFIG } from "./paths";
 
 // Resolve prompts relative to the claudeclaw installation, not the project dir
 const PROMPTS_DIR = join(import.meta.dir, "..", "prompts");
@@ -179,7 +179,9 @@ function buildSecurityArgs(security: SecurityConfig): string[] {
  * Load order:
  *   1. AGENTS.md  — agent identity / persona
  *   2. SOUL.md    — behavioral guidelines
- *   3. MEMORY.md  — persistent memory (groomed across sessions)
+ *
+ * MEMORY.md is no longer injected wholesale. Instead, memory_search and
+ * memory_get MCP tools are available for on-demand recall.
  */
 async function loadPrompts(): Promise<string> {
   const candidates: Array<{ workspace: string; fallback: string }> = [
@@ -204,18 +206,39 @@ async function loadPrompts(): Promise<string> {
     if (user.trim()) parts.push(user.trim());
   } catch {}
 
-  // Load persistent memory if it exists (auto-compact first if oversized)
+  // Memory recall instruction — tells Claude to use tools instead of relying on pre-loaded content
   if (existsSync(MEMORY_MD)) {
-    await compactMemoryIfNeeded();
-    try {
-      const memory = await Bun.file(MEMORY_MD).text();
-      if (memory.trim()) {
-        parts.push(`## Persistent Memory\n\n${memory.trim()}`);
-      }
-    } catch {}
+    parts.push(
+      "## Memory Recall\n" +
+      "Before answering anything about prior work, decisions, preferences, or todos: " +
+      "run memory_search with a relevant query, then use memory_get to pull only the needed lines. " +
+      "Citations: include Source: <path#line> when it helps verify memory snippets."
+    );
   }
 
   return parts.join("\n\n");
+}
+
+/**
+ * Write the MCP config file that registers the memory server.
+ * Called once at startup so --mcp-config can point to a stable path.
+ */
+export async function writeMemoryMcpConfig(): Promise<void> {
+  // Resolve the absolute path to the memory-server entry point
+  const serverScript = join(import.meta.dir, "mcp", "memory-server.ts");
+  const config = {
+    mcpServers: {
+      "claudeclaw-memory": {
+        command: "bun",
+        args: ["run", serverScript],
+      },
+    },
+  };
+  try {
+    await writeFile(MEMORY_MCP_CONFIG, JSON.stringify(config, null, 2), "utf8");
+  } catch (e) {
+    console.error(`[${new Date().toLocaleTimeString()}] Failed to write memory MCP config:`, e);
+  }
 }
 
 /**
@@ -305,6 +328,11 @@ async function execClaude(name: string, prompt: string): Promise<RunResult> {
 
   if (!isNew) {
     args.push("--resume", existing.sessionId);
+  }
+
+  // Attach memory MCP server if its config file exists
+  if (existsSync(MEMORY_MCP_CONFIG)) {
+    args.push("--mcp-config", MEMORY_MCP_CONFIG);
   }
 
   // Build the appended system prompt: prompt files + directory scoping
