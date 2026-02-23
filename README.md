@@ -51,6 +51,8 @@ All runtime data lives at `~/.claudeclaw/` — user-global, not tied to any proj
   state.json             ← live statusline data
   memory-mcp.json        ← auto-generated MCP config for memory tools
   memory-embeddings.db   ← SQLite cache for memory chunk embeddings
+  browser-mcp.json       ← auto-generated MCP config for browser tools (when browser.enabled)
+  mcp.json               ← merged MCP config written when both memory + browser are active
   workspace/
     AGENTS.md            ← agent identity / persona (edit to customize)
     SOUL.md              ← behavioral guidelines
@@ -119,6 +121,37 @@ When a provider is configured, search uses a hybrid score: `0.7 × cosine simila
 
 ---
 
+### Browser Control
+
+ClaudeClaw can give Claude full browser control via [`@playwright/mcp`](https://github.com/microsoft/playwright-mcp). When enabled, a `browser-mcp.json` config is generated at startup and merged with the memory MCP config, so Claude receives all browser tools automatically.
+
+**Enable in `settings.json`:**
+
+```json
+"browser": {
+  "enabled": true,
+  "engine": "chromium"
+}
+```
+
+**First-time setup** — install Playwright's browser binaries:
+
+```bash
+npx playwright install chromium
+```
+
+**Available tools** (35 total, added to `allowedTools` automatically):
+
+`browser_navigate`, `browser_click`, `browser_type`, `browser_snapshot`, `browser_take_screenshot`, `browser_fill_form`, `browser_evaluate`, `browser_select_option`, `browser_hover`, `browser_drag`, `browser_press_key`, `browser_navigate_back`, `browser_close`, and more.
+
+**Security levels:** Browser tools work with `moderate`, `strict`, and `unrestricted` levels. At `locked`, only `Read`, `Grep`, and `Glob` are permitted so browser tools are blocked regardless.
+
+**Engine options:**
+- `"chromium"` — default, stable, full Playwright support
+- `"lightpanda"` — experimental lightweight browser (AGPL-3.0, beta); run it as a CDP server on `localhost:9222` before starting the daemon
+
+---
+
 ## Features
 
 | Feature | Status |
@@ -134,7 +167,7 @@ When a provider is configured, search uses a hybrid score: `0.7 × cosine simila
 | Fallback model (e.g. GLM on rate-limit) | ✅ |
 | Voice transcription (OGG/Opus via whisper) | ✅ |
 | Slack bot | 🔧 in progress |
-| Playwright browser control (MCP) | 🔧 in progress |
+| Playwright browser control (MCP) | ✅ |
 | WhatsApp | 📋 planned |
 | Webhook job triggers | 📋 planned |
 
@@ -176,11 +209,17 @@ See [ROADMAP.md](./ROADMAP.md) for full details.
       "api": "",
       "baseUrl": ""
     }
+  },
+  "browser": {
+    "enabled": false,
+    "engine": "chromium"
   }
 }
 ```
 
 `memory.embeddings.provider`: `"none"` (keyword search, default) · `"openai"` · `"ollama"`
+
+`browser.engine`: `"chromium"` (default) · `"lightpanda"` (experimental)
 
 ## Cron Job Format
 
