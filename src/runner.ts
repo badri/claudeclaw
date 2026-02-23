@@ -4,8 +4,8 @@ import { existsSync } from "fs";
 import { getSession, createSession } from "./sessions";
 import { getSettings, type ModelConfig, type SecurityConfig } from "./config";
 import { buildClockPromptPrefix } from "./timezone";
+import { LOGS_DIR, MEMORY_DIR, AGENTS_MD, SOUL_MD, MEMORY_MD } from "./paths";
 
-const LOGS_DIR = join(process.cwd(), ".claude/claudeclaw/logs");
 // Resolve prompts relative to the claudeclaw installation, not the project dir
 const PROMPTS_DIR = join(import.meta.dir, "..", "prompts");
 const HEARTBEAT_PROMPT_FILE = join(PROMPTS_DIR, "heartbeat", "HEARTBEAT.md");
@@ -172,25 +172,64 @@ function buildSecurityArgs(security: SecurityConfig): string[] {
   return args;
 }
 
-/** Load and concatenate all prompt files from the prompts/ directory. */
+/**
+ * Load system prompt files. Workspace files (~/.claudeclaw/workspace/) take
+ * priority over bundled templates (prompts/). Falls back gracefully if missing.
+ *
+ * Load order:
+ *   1. AGENTS.md  — agent identity / persona
+ *   2. SOUL.md    — behavioral guidelines
+ *   3. MEMORY.md  — persistent memory (groomed across sessions)
+ */
 async function loadPrompts(): Promise<string> {
-  const selectedPromptFiles = [
-    join(PROMPTS_DIR, "IDENTITY.md"),
-    join(PROMPTS_DIR, "USER.md"),
-    join(PROMPTS_DIR, "SOUL.md"),
+  const candidates: Array<{ workspace: string; fallback: string }> = [
+    { workspace: AGENTS_MD, fallback: join(PROMPTS_DIR, "IDENTITY.md") },
+    { workspace: SOUL_MD, fallback: join(PROMPTS_DIR, "SOUL.md") },
   ];
   const parts: string[] = [];
 
-  for (const file of selectedPromptFiles) {
+  for (const { workspace, fallback } of candidates) {
+    const file = existsSync(workspace) ? workspace : fallback;
     try {
       const content = await Bun.file(file).text();
       if (content.trim()) parts.push(content.trim());
-    } catch (e) {
-      console.error(`[${new Date().toLocaleTimeString()}] Failed to read prompt file ${file}:`, e);
+    } catch {
+      // file missing — skip silently
     }
   }
 
+  // Also load USER.md from bundled prompts (user-editable identity context)
+  try {
+    const user = await Bun.file(join(PROMPTS_DIR, "USER.md")).text();
+    if (user.trim()) parts.push(user.trim());
+  } catch {}
+
+  // Load persistent memory if it exists
+  if (existsSync(MEMORY_MD)) {
+    try {
+      const memory = await Bun.file(MEMORY_MD).text();
+      if (memory.trim()) {
+        parts.push(`## Persistent Memory\n\n${memory.trim()}`);
+      }
+    } catch {}
+  }
+
   return parts.join("\n\n");
+}
+
+/** Append a dated entry to the daily journal under ~/.claudeclaw/workspace/memory/. */
+export async function appendJournalEntry(name: string, summary: string): Promise<void> {
+  try {
+    await mkdir(MEMORY_DIR, { recursive: true });
+    const date = new Date().toISOString().split("T")[0];
+    const file = join(MEMORY_DIR, `${date}.md`);
+    const ts = new Date().toLocaleTimeString();
+    const entry = `\n## [${ts}] ${name}\n\n${summary.trim()}\n`;
+    const existing = existsSync(file) ? await Bun.file(file).text() : `# Journal — ${date}\n`;
+    await Bun.write(file, existing + entry);
+  } catch {
+    // journal is best-effort — never fail a run because of it
+  }
 }
 
 export async function loadHeartbeatPromptTemplate(): Promise<string> {
@@ -317,6 +356,11 @@ async function execClaude(name: string, prompt: string): Promise<RunResult> {
 
   await Bun.write(logFile, output);
   console.log(`[${new Date().toLocaleTimeString()}] Done: ${name} → ${logFile}`);
+
+  // Append a brief journal entry so memory accumulates across sessions
+  if (stdout.trim()) {
+    await appendJournalEntry(name, stdout.slice(0, 500));
+  }
 
   return result;
 }

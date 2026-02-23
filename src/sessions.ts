@@ -1,8 +1,6 @@
-import { join } from "path";
 import { unlink, readdir, rename } from "fs/promises";
-
-const HEARTBEAT_DIR = join(process.cwd(), ".claude", "claudeclaw");
-const SESSION_FILE = join(HEARTBEAT_DIR, "session.json");
+import { join } from "path";
+import { CLAUDECLAW_DIR, SESSION_FILE } from "./paths";
 
 export interface GlobalSession {
   sessionId: string;
@@ -68,7 +66,7 @@ export async function backupSession(): Promise<string | null> {
   // Find next backup index
   let files: string[];
   try {
-    files = await readdir(HEARTBEAT_DIR);
+    files = await readdir(CLAUDECLAW_DIR);
   } catch {
     files = [];
   }
@@ -78,7 +76,7 @@ export async function backupSession(): Promise<string | null> {
   const nextIndex = indices.length > 0 ? Math.max(...indices) + 1 : 1;
 
   const backupName = `session_${nextIndex}.backup`;
-  const backupPath = join(HEARTBEAT_DIR, backupName);
+  const backupPath = join(CLAUDECLAW_DIR, backupName);
   await rename(SESSION_FILE, backupPath);
   current = null;
 

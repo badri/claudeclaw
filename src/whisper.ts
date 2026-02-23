@@ -3,9 +3,10 @@ import { chmod, mkdir, rename, rm, stat, access, readdir, open } from "node:fs/p
 import { statSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { WHISPER_DIR } from "./paths";
 
 const WHISPER_MODEL = "base.en";
-const WHISPER_ROOT = join(process.cwd(), ".claude", "claudeclaw", "whisper");
+const WHISPER_ROOT = WHISPER_DIR;
 const BIN_DIR = join(WHISPER_ROOT, "bin");
 const LIB_DIR = join(WHISPER_ROOT, "lib");
 const MODEL_FOLDER = join(WHISPER_ROOT, "models");

@@ -1,10 +1,10 @@
-import { writeFile, unlink, readdir, readFile } from "fs/promises";
+import { writeFile, unlink } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
 import { getPidPath, cleanupPidFile } from "../pid";
+import { STATE_FILE } from "../paths";
 
-const CLAUDE_DIR = join(process.cwd(), ".claude");
-const HEARTBEAT_DIR = join(CLAUDE_DIR, "claudeclaw");
+const CLAUDE_DIR = join(homedir(), ".claude");
 const STATUSLINE_FILE = join(CLAUDE_DIR, "statusline.cjs");
 const CLAUDE_SETTINGS_FILE = join(CLAUDE_DIR, "settings.json");
 
@@ -45,7 +45,7 @@ export async function stop() {
   await teardownStatusline();
 
   try {
-    await unlink(join(HEARTBEAT_DIR, "state.json"));
+    await unlink(STATE_FILE);
   } catch {
     // already gone
   }
@@ -53,42 +53,7 @@ export async function stop() {
   process.exit(0);
 }
 
+// Kept for CLI compat but now a no-op alias — the daemon is global, not per-project.
 export async function stopAll() {
-  const projectsDir = join(homedir(), ".claude", "projects");
-  let dirs: string[];
-  try {
-    dirs = await readdir(projectsDir);
-  } catch {
-    console.log("No projects found.");
-    process.exit(0);
-  }
-
-  let found = 0;
-  for (const dir of dirs) {
-    const projectPath = "/" + dir.slice(1).replace(/-/g, "/");
-    const pidFile = join(projectPath, ".claude", "claudeclaw", "daemon.pid");
-
-    let pid: string;
-    try {
-      pid = (await readFile(pidFile, "utf-8")).trim();
-      process.kill(Number(pid), 0);
-    } catch {
-      continue;
-    }
-
-    found++;
-    try {
-      process.kill(Number(pid), "SIGTERM");
-      console.log(`\x1b[33m■ Stopped\x1b[0m PID ${pid} — ${projectPath}`);
-      try { await unlink(pidFile); } catch {}
-    } catch {
-      console.log(`\x1b[31m✗ Failed to stop\x1b[0m PID ${pid} — ${projectPath}`);
-    }
-  }
-
-  if (found === 0) {
-    console.log("No running daemons found.");
-  }
-
-  process.exit(0);
+  return stop();
 }

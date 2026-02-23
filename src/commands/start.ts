@@ -1,5 +1,6 @@
 import { writeFile, unlink, mkdir } from "fs/promises";
 import { join } from "path";
+import { homedir } from "os";
 import { fileURLToPath } from "url";
 import { run, runUserMessage, bootstrap, ensureProjectClaudeMd, loadHeartbeatPromptTemplate } from "../runner";
 import { writeState, type StateData } from "../statusline";
@@ -11,8 +12,7 @@ import { getDayAndMinuteAtOffset } from "../timezone";
 import { startWebUi, type WebServerHandle } from "../web";
 import type { Job } from "../jobs";
 
-const CLAUDE_DIR = join(process.cwd(), ".claude");
-const HEARTBEAT_DIR = join(CLAUDE_DIR, "claudeclaw");
+const CLAUDE_DIR = join(homedir(), ".claude");
 const STATUSLINE_FILE = join(CLAUDE_DIR, "statusline.cjs");
 const CLAUDE_SETTINGS_FILE = join(CLAUDE_DIR, "settings.json");
 const PREFLIGHT_SCRIPT = fileURLToPath(new URL("../preflight.ts", import.meta.url));
@@ -22,8 +22,9 @@ const PREFLIGHT_SCRIPT = fileURLToPath(new URL("../preflight.ts", import.meta.ur
 const STATUSLINE_SCRIPT = `#!/usr/bin/env node
 const { readFileSync } = require("fs");
 const { join } = require("path");
+const { homedir } = require("os");
 
-const DIR = join(__dirname, "claudeclaw");
+const DIR = join(homedir(), ".claudeclaw");
 const STATE_FILE = join(DIR, "state.json");
 const PID_FILE = join(DIR, "daemon.pid");
 
@@ -168,7 +169,7 @@ async function setupStatusline() {
   }
   settings.statusLine = {
     type: "command",
-    command: "node .claude/statusline.cjs",
+    command: `node ${join(homedir(), ".claude", "statusline.cjs")}`,
   };
   await writeFile(CLAUDE_SETTINGS_FILE, JSON.stringify(settings, null, 2) + "\n");
 }

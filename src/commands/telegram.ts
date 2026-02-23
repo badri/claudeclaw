@@ -4,6 +4,7 @@ import { resetSession } from "../sessions";
 import { transcribeAudioToText } from "../whisper";
 import { mkdir } from "node:fs/promises";
 import { extname, join } from "node:path";
+import { TELEGRAM_INBOX_DIR } from "../paths";
 
 // --- Markdown → Telegram HTML conversion (ported from nanobot) ---
 
@@ -347,7 +348,7 @@ async function downloadImageFromMessage(token: string, message: TelegramMessage)
   const response = await fetch(downloadUrl);
   if (!response.ok) throw new Error(`Telegram file download failed: ${response.status} ${response.statusText}`);
 
-  const dir = join(process.cwd(), ".claude", "claudeclaw", "inbox", "telegram");
+  const dir = TELEGRAM_INBOX_DIR;
   await mkdir(dir, { recursive: true });
 
   const remoteExt = extname(remotePath);
@@ -378,7 +379,7 @@ async function downloadVoiceFromMessage(token: string, message: TelegramMessage)
   const response = await fetch(downloadUrl);
   if (!response.ok) throw new Error(`Telegram file download failed: ${response.status} ${response.statusText}`);
 
-  const dir = join(process.cwd(), ".claude", "claudeclaw", "inbox", "telegram");
+  const dir = TELEGRAM_INBOX_DIR;
   await mkdir(dir, { recursive: true });
 
   const remoteExt = extname(remotePath);

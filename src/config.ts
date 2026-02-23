@@ -2,11 +2,7 @@ import { join, isAbsolute } from "path";
 import { mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import { normalizeTimezoneName, resolveTimezoneOffsetMinutes } from "./timezone";
-
-const HEARTBEAT_DIR = join(process.cwd(), ".claude", "claudeclaw");
-const SETTINGS_FILE = join(HEARTBEAT_DIR, "settings.json");
-const JOBS_DIR = join(HEARTBEAT_DIR, "jobs");
-const LOGS_DIR = join(HEARTBEAT_DIR, "logs");
+import { CLAUDECLAW_DIR, SETTINGS_FILE, JOBS_DIR, LOGS_DIR, WORKSPACE_DIR, MEMORY_DIR, SKILLS_DIR, TELEGRAM_INBOX_DIR, WHISPER_DIR } from "./paths";
 
 const DEFAULT_SETTINGS: Settings = {
   model: "",
@@ -84,9 +80,14 @@ export interface WebConfig {
 let cached: Settings | null = null;
 
 export async function initConfig(): Promise<void> {
-  await mkdir(HEARTBEAT_DIR, { recursive: true });
+  await mkdir(CLAUDECLAW_DIR, { recursive: true });
+  await mkdir(WORKSPACE_DIR, { recursive: true });
   await mkdir(JOBS_DIR, { recursive: true });
   await mkdir(LOGS_DIR, { recursive: true });
+  await mkdir(MEMORY_DIR, { recursive: true });
+  await mkdir(SKILLS_DIR, { recursive: true });
+  await mkdir(TELEGRAM_INBOX_DIR, { recursive: true });
+  await mkdir(WHISPER_DIR, { recursive: true });
 
   if (!existsSync(SETTINGS_FILE)) {
     await Bun.write(SETTINGS_FILE, JSON.stringify(DEFAULT_SETTINGS, null, 2) + "\n");
