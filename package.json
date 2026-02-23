@@ -12,6 +12,7 @@
     "@types/bun": "^1.3.9"
   },
   "dependencies": {
+    "@playwright/mcp": "^0.0.68",
     "ogg-opus-decoder": "^1.7.3"
   }
 }
