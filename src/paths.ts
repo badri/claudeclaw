@@ -52,3 +52,6 @@ export const WHISPER_DIR = join(CLAUDECLAW_DIR, "whisper");
 
 // MCP config written at startup so runner.ts can pass --mcp-config to claude
 export const MEMORY_MCP_CONFIG = join(CLAUDECLAW_DIR, "memory-mcp.json");
+
+// SQLite database for cached memory chunk embeddings
+export const MEMORY_EMBEDDINGS_DB = join(CLAUDECLAW_DIR, "memory-embeddings.db");

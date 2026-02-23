@@ -22,6 +22,9 @@ const DEFAULT_SETTINGS: Settings = {
   telegram: { token: "", allowedUserIds: [] },
   security: { level: "moderate", allowedTools: [], disallowedTools: [] },
   web: { enabled: false, host: "127.0.0.1", port: 4632 },
+  memory: {
+    embeddings: { provider: "none", model: "", api: "", baseUrl: "" },
+  },
 };
 
 export interface HeartbeatExcludeWindow {
@@ -64,6 +67,7 @@ export interface Settings {
   telegram: TelegramConfig;
   security: SecurityConfig;
   web: WebConfig;
+  memory: MemoryConfig;
 }
 
 export interface ModelConfig {
@@ -75,6 +79,22 @@ export interface WebConfig {
   enabled: boolean;
   host: string;
   port: number;
+}
+
+export type EmbeddingsProvider = "openai" | "ollama" | "none";
+
+export interface MemoryEmbeddingsConfig {
+  provider: EmbeddingsProvider;
+  /** Model name. Defaults: openai → "text-embedding-3-small", ollama → "nomic-embed-text" */
+  model: string;
+  /** API key for openai. Falls back to OPENAI_API_KEY env var. */
+  api: string;
+  /** Base URL override. Defaults: openai → "https://api.openai.com", ollama → "http://localhost:11434" */
+  baseUrl: string;
+}
+
+export interface MemoryConfig {
+  embeddings: MemoryEmbeddingsConfig;
 }
 
 let cached: Settings | null = null;
@@ -143,6 +163,26 @@ function parseSettings(raw: Record<string, any>): Settings {
       host: raw.web?.host ?? "127.0.0.1",
       port: Number.isFinite(raw.web?.port) ? Number(raw.web.port) : 4632,
     },
+    memory: {
+      embeddings: parseEmbeddingsConfig(raw.memory?.embeddings),
+    },
+  };
+}
+
+const VALID_EMBEDDING_PROVIDERS = new Set<EmbeddingsProvider>(["openai", "ollama", "none"]);
+
+function parseEmbeddingsConfig(raw: unknown): MemoryEmbeddingsConfig {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const rawProvider = r.provider;
+  const provider: EmbeddingsProvider =
+    typeof rawProvider === "string" && VALID_EMBEDDING_PROVIDERS.has(rawProvider as EmbeddingsProvider)
+      ? (rawProvider as EmbeddingsProvider)
+      : "none";
+  return {
+    provider,
+    model: typeof r.model === "string" ? r.model.trim() : "",
+    api: typeof r.api === "string" ? r.api.trim() : "",
+    baseUrl: typeof r.baseUrl === "string" ? r.baseUrl.trim() : "",
   };
 }
 
