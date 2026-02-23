@@ -1,11 +1,21 @@
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { join } from "path";
-import { homedir } from "os";
 import { existsSync } from "fs";
 import { getSession, createSession } from "./sessions";
 import { getSettings, type ModelConfig, type SecurityConfig, type BrowserConfig } from "./config";
 import { buildClockPromptPrefix } from "./timezone";
-import { LOGS_DIR, MEMORY_DIR, AGENTS_MD, SOUL_MD, MEMORY_MD, MEMORY_MCP_CONFIG, BROWSER_MCP_CONFIG } from "./paths";
+import { LOGS_DIR, MEMORY_MCP_CONFIG, BROWSER_MCP_CONFIG, getAgentPaths, type AgentPaths } from "./paths";
+
+export interface AgentContext {
+  agentId: string;
+  paths: AgentPaths;
+}
+
+function resolveAgentContext(agentId?: string): AgentContext {
+  const settings = getSettings();
+  const id = agentId ?? settings.agents?.default ?? "main";
+  return { agentId: id, paths: getAgentPaths(id) };
+}
 
 // Resolve prompts relative to the claudeclaw installation, not the project dir
 const PROMPTS_DIR = join(import.meta.dir, "..", "prompts");
@@ -193,7 +203,7 @@ function buildSecurityArgs(security: SecurityConfig, browser?: BrowserConfig): s
 }
 
 /**
- * Load system prompt files. Workspace files (~/.claudeclaw/workspace/) take
+ * Load system prompt files for a given agent context. Workspace files take
  * priority over bundled templates (prompts/). Falls back gracefully if missing.
  *
  * Load order:
@@ -203,10 +213,11 @@ function buildSecurityArgs(security: SecurityConfig, browser?: BrowserConfig): s
  * MEMORY.md is no longer injected wholesale. Instead, memory_search and
  * memory_get MCP tools are available for on-demand recall.
  */
-async function loadPrompts(): Promise<string> {
+async function loadPrompts(ctx?: AgentContext): Promise<string> {
+  const paths = ctx?.paths ?? getAgentPaths("main");
   const candidates: Array<{ workspace: string; fallback: string }> = [
-    { workspace: AGENTS_MD, fallback: join(PROMPTS_DIR, "IDENTITY.md") },
-    { workspace: SOUL_MD, fallback: join(PROMPTS_DIR, "SOUL.md") },
+    { workspace: paths.agentsMd, fallback: join(PROMPTS_DIR, "IDENTITY.md") },
+    { workspace: paths.soulMd, fallback: join(PROMPTS_DIR, "SOUL.md") },
   ];
   const parts: string[] = [];
 
@@ -227,7 +238,7 @@ async function loadPrompts(): Promise<string> {
   } catch {}
 
   // Memory recall instruction — tells Claude to use tools instead of relying on pre-loaded content
-  if (existsSync(MEMORY_MD)) {
+  if (existsSync(paths.memoryMd)) {
     parts.push(
       "## Memory Recall\n" +
       "Before answering anything about prior work, decisions, preferences, or todos: " +
@@ -242,8 +253,9 @@ async function loadPrompts(): Promise<string> {
 /**
  * Write the MCP config file that registers the memory server.
  * Called once at startup so --mcp-config can point to a stable path.
+ * Pass configPath to write to an agent-specific location.
  */
-export async function writeMemoryMcpConfig(): Promise<void> {
+export async function writeMemoryMcpConfig(configPath = MEMORY_MCP_CONFIG): Promise<void> {
   // Resolve the absolute path to the memory-server entry point
   const serverScript = join(import.meta.dir, "mcp", "memory-server.ts");
   const config = {
@@ -255,7 +267,7 @@ export async function writeMemoryMcpConfig(): Promise<void> {
     },
   };
   try {
-    await writeFile(MEMORY_MCP_CONFIG, JSON.stringify(config, null, 2), "utf8");
+    await writeFile(configPath, JSON.stringify(config, null, 2), "utf8");
   } catch (e) {
     console.error(`[${new Date().toLocaleTimeString()}] Failed to write memory MCP config:`, e);
   }
@@ -290,10 +302,11 @@ export async function writeBrowserMcpConfig(): Promise<void> {
  */
 const MAX_MEMORY_CHARS = 16000; // ~4000 tokens
 
-export async function compactMemoryIfNeeded(): Promise<void> {
-  if (!existsSync(MEMORY_MD)) return;
+export async function compactMemoryIfNeeded(agentId = "main"): Promise<void> {
+  const memoryMd = getAgentPaths(agentId).memoryMd;
+  if (!existsSync(memoryMd)) return;
   try {
-    const content = await Bun.file(MEMORY_MD).text();
+    const content = await Bun.file(memoryMd).text();
     if (content.length <= MAX_MEMORY_CHARS) return;
 
     // Split into lines, keep as many lines from the end as fit
@@ -312,19 +325,20 @@ export async function compactMemoryIfNeeded(): Promise<void> {
     }
 
     const trimmed = [notice, ...lines.slice(lines.length - kept)].join("\n");
-    await Bun.write(MEMORY_MD, trimmed);
+    await Bun.write(memoryMd, trimmed);
     console.log(`[${new Date().toLocaleTimeString()}] MEMORY.md compacted (${content.length} → ${trimmed.length} chars)`);
   } catch {
     // best-effort — never fail a run
   }
 }
 
-/** Append a dated entry to the daily journal under ~/.claudeclaw/workspace/memory/. */
-export async function appendJournalEntry(name: string, summary: string): Promise<void> {
+/** Append a dated entry to the daily journal under the agent's memory/ dir. */
+export async function appendJournalEntry(name: string, summary: string, agentId = "main"): Promise<void> {
   try {
-    await mkdir(MEMORY_DIR, { recursive: true });
+    const memoryDir = getAgentPaths(agentId).memoryDir;
+    await mkdir(memoryDir, { recursive: true });
     const date = new Date().toISOString().split("T")[0];
-    const file = join(MEMORY_DIR, `${date}.md`);
+    const file = join(memoryDir, `${date}.md`);
     const ts = new Date().toLocaleTimeString();
     const entry = `\n## [${ts}] ${name}\n\n${summary.trim()}\n`;
     const existing = existsSync(file) ? await Bun.file(file).text() : `# Journal — ${date}\n`;
@@ -343,10 +357,10 @@ export async function loadHeartbeatPromptTemplate(): Promise<string> {
   }
 }
 
-async function execClaude(name: string, prompt: string): Promise<RunResult> {
+async function execClaude(name: string, prompt: string, ctx: AgentContext): Promise<RunResult> {
   await mkdir(LOGS_DIR, { recursive: true });
 
-  const existing = await getSession();
+  const existing = await getSession(ctx.agentId);
   const isNew = !existing;
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const logFile = join(LOGS_DIR, `${name}-${timestamp}.log`);
@@ -374,22 +388,23 @@ async function execClaude(name: string, prompt: string): Promise<RunResult> {
 
   // Attach MCP server configs. Merge into a single file when both are active
   // because claude CLI only accepts one --mcp-config flag.
-  const hasMemory = existsSync(MEMORY_MCP_CONFIG);
+  const agentMemoryMcp = ctx.paths.memoryMcpConfig;
+  const hasMemory = existsSync(agentMemoryMcp);
   const hasBrowser = existsSync(BROWSER_MCP_CONFIG);
   if (hasMemory && hasBrowser) {
-    const mcpPath = join(homedir(), ".claudeclaw", "mcp.json");
+    const mcpPath = ctx.paths.mcpConfig;
     try {
-      const memCfg = JSON.parse(await readFile(MEMORY_MCP_CONFIG, "utf8"));
+      const memCfg = JSON.parse(await readFile(agentMemoryMcp, "utf8"));
       const brwCfg = JSON.parse(await readFile(BROWSER_MCP_CONFIG, "utf8"));
       const merged = { mcpServers: { ...memCfg.mcpServers, ...brwCfg.mcpServers } };
       await writeFile(mcpPath, JSON.stringify(merged, null, 2), "utf8");
       args.push("--mcp-config", mcpPath);
     } catch (e) {
       console.error(`[${new Date().toLocaleTimeString()}] Failed to merge MCP configs:`, e);
-      args.push("--mcp-config", MEMORY_MCP_CONFIG);
+      args.push("--mcp-config", agentMemoryMcp);
     }
   } else if (hasMemory) {
-    args.push("--mcp-config", MEMORY_MCP_CONFIG);
+    args.push("--mcp-config", agentMemoryMcp);
   } else if (hasBrowser) {
     args.push("--mcp-config", BROWSER_MCP_CONFIG);
   }
@@ -397,7 +412,7 @@ async function execClaude(name: string, prompt: string): Promise<RunResult> {
   // Build the appended system prompt: prompt files + directory scoping
   // This is passed on EVERY invocation (not just new sessions) because
   // --append-system-prompt does not persist across --resume.
-  const promptContent = await loadPrompts();
+  const promptContent = await loadPrompts(ctx);
   const appendParts: string[] = [
     "You are running inside ClaudeClaw.",
   ];
@@ -452,7 +467,7 @@ async function execClaude(name: string, prompt: string): Promise<RunResult> {
       sessionId = json.session_id;
       stdout = json.result ?? "";
       // Save the real session ID from Claude Code
-      await createSession(sessionId);
+      await createSession(sessionId, ctx.agentId);
       console.log(`[${new Date().toLocaleTimeString()}] Session created: ${sessionId}`);
     } catch (e) {
       console.error(`[${new Date().toLocaleTimeString()}] Failed to parse session from Claude output:`, e);
@@ -483,14 +498,15 @@ async function execClaude(name: string, prompt: string): Promise<RunResult> {
 
   // Append a brief journal entry so memory accumulates across sessions
   if (stdout.trim()) {
-    await appendJournalEntry(name, stdout.slice(0, 500));
+    await appendJournalEntry(name, stdout.slice(0, 500), ctx.agentId);
   }
 
   return result;
 }
 
-export async function run(name: string, prompt: string): Promise<RunResult> {
-  return enqueue(() => execClaude(name, prompt));
+export async function run(name: string, prompt: string, agentId?: string): Promise<RunResult> {
+  const ctx = resolveAgentContext(agentId);
+  return enqueue(() => execClaude(name, prompt, ctx));
 }
 
 function prefixUserMessageWithClock(prompt: string): string {
@@ -504,19 +520,20 @@ function prefixUserMessageWithClock(prompt: string): string {
   }
 }
 
-export async function runUserMessage(name: string, prompt: string): Promise<RunResult> {
-  return run(name, prefixUserMessageWithClock(prompt));
+export async function runUserMessage(name: string, prompt: string, agentId?: string): Promise<RunResult> {
+  return run(name, prefixUserMessageWithClock(prompt), agentId);
 }
 
 /**
  * Bootstrap the session: fires Claude with the system prompt so the
  * session is created immediately. No-op if a session already exists.
  */
-export async function bootstrap(): Promise<void> {
-  const existing = await getSession();
+export async function bootstrap(agentId?: string): Promise<void> {
+  const ctx = resolveAgentContext(agentId);
+  const existing = await getSession(ctx.agentId);
   if (existing) return;
 
   console.log(`[${new Date().toLocaleTimeString()}] Bootstrapping new session...`);
-  await execClaude("bootstrap", "Wakeup, my friend!");
+  await execClaude("bootstrap", "Wakeup, my friend!", ctx);
   console.log(`[${new Date().toLocaleTimeString()}] Bootstrap complete — session is live.`);
 }

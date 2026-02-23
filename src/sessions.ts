@@ -1,6 +1,6 @@
 import { unlink, readdir, rename } from "fs/promises";
-import { join } from "path";
-import { CLAUDECLAW_DIR, SESSION_FILE } from "./paths";
+import { join, dirname } from "path";
+import { CLAUDECLAW_DIR, getAgentPaths } from "./paths";
 
 export interface GlobalSession {
   sessionId: string;
@@ -8,37 +8,44 @@ export interface GlobalSession {
   lastUsedAt: string;
 }
 
-let current: GlobalSession | null = null;
+// Per-agent session cache keyed by agentId
+const cache = new Map<string, GlobalSession>();
 
-async function loadSession(): Promise<GlobalSession | null> {
-  if (current) return current;
+function sessionFilePath(agentId: string): string {
+  return getAgentPaths(agentId).sessionFile;
+}
+
+async function loadSession(agentId: string): Promise<GlobalSession | null> {
+  const cached = cache.get(agentId);
+  if (cached) return cached;
   try {
-    current = await Bun.file(SESSION_FILE).json();
-    return current;
+    const session = await Bun.file(sessionFilePath(agentId)).json();
+    cache.set(agentId, session);
+    return session;
   } catch {
     return null;
   }
 }
 
-async function saveSession(session: GlobalSession): Promise<void> {
-  current = session;
-  await Bun.write(SESSION_FILE, JSON.stringify(session, null, 2) + "\n");
+async function saveSession(agentId: string, session: GlobalSession): Promise<void> {
+  cache.set(agentId, session);
+  await Bun.write(sessionFilePath(agentId), JSON.stringify(session, null, 2) + "\n");
 }
 
 /** Returns the existing session or null. Never creates one. */
-export async function getSession(): Promise<{ sessionId: string } | null> {
-  const existing = await loadSession();
+export async function getSession(agentId = "main"): Promise<{ sessionId: string } | null> {
+  const existing = await loadSession(agentId);
   if (existing) {
     existing.lastUsedAt = new Date().toISOString();
-    await saveSession(existing);
+    await saveSession(agentId, existing);
     return { sessionId: existing.sessionId };
   }
   return null;
 }
 
 /** Save a session ID obtained from Claude Code's output. */
-export async function createSession(sessionId: string): Promise<void> {
-  await saveSession({
+export async function createSession(sessionId: string, agentId = "main"): Promise<void> {
+  await saveSession(agentId, {
     sessionId,
     createdAt: new Date().toISOString(),
     lastUsedAt: new Date().toISOString(),
@@ -46,27 +53,30 @@ export async function createSession(sessionId: string): Promise<void> {
 }
 
 /** Returns session metadata without mutating lastUsedAt. */
-export async function peekSession(): Promise<GlobalSession | null> {
-  return await loadSession();
+export async function peekSession(agentId = "main"): Promise<GlobalSession | null> {
+  return await loadSession(agentId);
 }
 
-export async function resetSession(): Promise<void> {
-  current = null;
+export async function resetSession(agentId = "main"): Promise<void> {
+  cache.delete(agentId);
   try {
-    await unlink(SESSION_FILE);
+    await unlink(sessionFilePath(agentId));
   } catch {
     // already gone
   }
 }
 
-export async function backupSession(): Promise<string | null> {
-  const existing = await loadSession();
+export async function backupSession(agentId = "main"): Promise<string | null> {
+  const existing = await loadSession(agentId);
   if (!existing) return null;
 
-  // Find next backup index
+  const file = sessionFilePath(agentId);
+  // Main agent keeps backups in CLAUDECLAW_DIR (legacy behaviour); others use workspace dir
+  const backupDir = agentId === "main" ? CLAUDECLAW_DIR : dirname(file);
+
   let files: string[];
   try {
-    files = await readdir(CLAUDECLAW_DIR);
+    files = await readdir(backupDir);
   } catch {
     files = [];
   }
@@ -76,9 +86,9 @@ export async function backupSession(): Promise<string | null> {
   const nextIndex = indices.length > 0 ? Math.max(...indices) + 1 : 1;
 
   const backupName = `session_${nextIndex}.backup`;
-  const backupPath = join(CLAUDECLAW_DIR, backupName);
-  await rename(SESSION_FILE, backupPath);
-  current = null;
+  const backupPath = join(backupDir, backupName);
+  await rename(file, backupPath);
+  cache.delete(agentId);
 
   return backupName;
 }
