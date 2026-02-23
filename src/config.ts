@@ -25,6 +25,7 @@ const DEFAULT_SETTINGS: Settings = {
   memory: {
     embeddings: { provider: "none", model: "", api: "", baseUrl: "" },
   },
+  browser: { enabled: false, engine: "chromium" },
 };
 
 export interface HeartbeatExcludeWindow {
@@ -68,6 +69,7 @@ export interface Settings {
   security: SecurityConfig;
   web: WebConfig;
   memory: MemoryConfig;
+  browser: BrowserConfig;
 }
 
 export interface ModelConfig {
@@ -95,6 +97,14 @@ export interface MemoryEmbeddingsConfig {
 
 export interface MemoryConfig {
   embeddings: MemoryEmbeddingsConfig;
+}
+
+export type BrowserEngine = "chromium" | "lightpanda";
+
+export interface BrowserConfig {
+  enabled: boolean;
+  /** Browser engine to use. Default: "chromium". "lightpanda" is experimental. */
+  engine: BrowserEngine;
 }
 
 let cached: Settings | null = null;
@@ -166,6 +176,22 @@ function parseSettings(raw: Record<string, any>): Settings {
     memory: {
       embeddings: parseEmbeddingsConfig(raw.memory?.embeddings),
     },
+    browser: parseBrowserConfig(raw.browser),
+  };
+}
+
+const VALID_BROWSER_ENGINES = new Set<BrowserEngine>(["chromium", "lightpanda"]);
+
+function parseBrowserConfig(raw: unknown): BrowserConfig {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const rawEngine = r.engine;
+  const engine: BrowserEngine =
+    typeof rawEngine === "string" && VALID_BROWSER_ENGINES.has(rawEngine as BrowserEngine)
+      ? (rawEngine as BrowserEngine)
+      : "chromium";
+  return {
+    enabled: r.enabled === true,
+    engine,
   };
 }
 
