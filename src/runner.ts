@@ -4,7 +4,7 @@ import { existsSync } from "fs";
 import { getSession, createSession } from "./sessions";
 import { getSettings, type Settings, type ModelConfig, type SecurityConfig, type BrowserConfig } from "./config";
 import { buildClockPromptPrefix } from "./timezone";
-import { LOGS_DIR, MEMORY_MCP_CONFIG, BROWSER_MCP_CONFIG, getAgentPaths, type AgentPaths } from "./paths";
+import { LOGS_DIR, MEMORY_MCP_CONFIG, BROWSER_MCP_CONFIG, AGENT_BRIDGE_MCP_CONFIG, getAgentPaths, type AgentPaths } from "./paths";
 
 export interface AgentContext {
   agentId: string;
@@ -297,6 +297,27 @@ export async function writeBrowserMcpConfig(): Promise<void> {
 }
 
 /**
+ * Write the MCP config file that registers the agent bridge server.
+ * Exposes the send_to_agent tool so agents can delegate to each other.
+ */
+export async function writeAgentBridgeMcpConfig(): Promise<void> {
+  const serverScript = join(import.meta.dir, "mcp", "agent-bridge-server.ts");
+  const config = {
+    mcpServers: {
+      "claudeclaw-agent-bridge": {
+        command: "bun",
+        args: ["run", serverScript],
+      },
+    },
+  };
+  try {
+    await writeFile(AGENT_BRIDGE_MCP_CONFIG, JSON.stringify(config, null, 2), "utf8");
+  } catch (e) {
+    console.error(`[${new Date().toLocaleTimeString()}] Failed to write agent bridge MCP config:`, e);
+  }
+}
+
+/**
  * Auto-compact MEMORY.md if it exceeds MAX_MEMORY_CHARS characters.
  * Keeps the header line(s) and trims oldest lines from the top until it fits.
  * Prepends a note that older entries were removed.
@@ -387,27 +408,34 @@ async function execClaude(name: string, prompt: string, ctx: AgentContext): Prom
     args.push("--resume", existing.sessionId);
   }
 
-  // Attach MCP server configs. Merge into a single file when both are active
+  // Attach MCP server configs. Merge into a single file when multiple are active
   // because claude CLI only accepts one --mcp-config flag.
   const agentMemoryMcp = ctx.paths.memoryMcpConfig;
   const hasMemory = existsSync(agentMemoryMcp);
   const hasBrowser = existsSync(BROWSER_MCP_CONFIG);
-  if (hasMemory && hasBrowser) {
+  const hasBridge = existsSync(AGENT_BRIDGE_MCP_CONFIG);
+  const extras = [
+    hasBrowser ? BROWSER_MCP_CONFIG : null,
+    hasBridge ? AGENT_BRIDGE_MCP_CONFIG : null,
+  ].filter(Boolean) as string[];
+
+  if (extras.length > 0 || (hasMemory && extras.length === 0)) {
     const mcpPath = ctx.paths.mcpConfig;
     try {
-      const memCfg = JSON.parse(await readFile(agentMemoryMcp, "utf8"));
-      const brwCfg = JSON.parse(await readFile(BROWSER_MCP_CONFIG, "utf8"));
-      const merged = { mcpServers: { ...memCfg.mcpServers, ...brwCfg.mcpServers } };
+      const configs = await Promise.all(
+        [hasMemory ? agentMemoryMcp : null, ...extras]
+          .filter(Boolean)
+          .map(async (p) => JSON.parse(await readFile(p!, "utf8")))
+      );
+      const merged = { mcpServers: Object.assign({}, ...configs.map((c) => c.mcpServers)) };
       await writeFile(mcpPath, JSON.stringify(merged, null, 2), "utf8");
       args.push("--mcp-config", mcpPath);
     } catch (e) {
       console.error(`[${new Date().toLocaleTimeString()}] Failed to merge MCP configs:`, e);
-      args.push("--mcp-config", agentMemoryMcp);
+      if (hasMemory) args.push("--mcp-config", agentMemoryMcp);
     }
   } else if (hasMemory) {
     args.push("--mcp-config", agentMemoryMcp);
-  } else if (hasBrowser) {
-    args.push("--mcp-config", BROWSER_MCP_CONFIG);
   }
 
   // Build the appended system prompt: prompt files + directory scoping

@@ -57,6 +57,9 @@ export const MEMORY_MCP_CONFIG = join(CLAUDECLAW_DIR, "memory-mcp.json");
 // MCP config for @playwright/mcp browser control (written when browser.enabled is true)
 export const BROWSER_MCP_CONFIG = join(CLAUDECLAW_DIR, "browser-mcp.json");
 
+// MCP config for the agent bridge (send_to_agent tool — written at startup)
+export const AGENT_BRIDGE_MCP_CONFIG = join(CLAUDECLAW_DIR, "agent-bridge-mcp.json");
+
 // SQLite database for cached memory chunk embeddings
 export const MEMORY_EMBEDDINGS_DB = join(CLAUDECLAW_DIR, "memory-embeddings.db");
 

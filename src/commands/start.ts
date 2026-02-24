@@ -2,7 +2,7 @@ import { writeFile, unlink, mkdir } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
-import { run, runUserMessage, bootstrap, ensureProjectClaudeMd, loadHeartbeatPromptTemplate, writeMemoryMcpConfig, writeBrowserMcpConfig, initAgentWorkspaces } from "../runner";
+import { run, runUserMessage, bootstrap, ensureProjectClaudeMd, loadHeartbeatPromptTemplate, writeMemoryMcpConfig, writeBrowserMcpConfig, writeAgentBridgeMcpConfig, initAgentWorkspaces } from "../runner";
 import { writeState, type StateData } from "../statusline";
 import { cronMatches, nextCronMatch } from "../cron";
 import { clearJobSchedule, loadJobs } from "../jobs";
@@ -285,6 +285,7 @@ export async function start(args: string[] = []) {
     await ensureProjectClaudeMd();
     await writeMemoryMcpConfig();
     if (settings.browser.enabled) await writeBrowserMcpConfig();
+    await writeAgentBridgeMcpConfig();
     await initAgentWorkspaces(settings);
     await bootstrap(agentId);
     const result = await runUserMessage("prompt", payload, agentId);
