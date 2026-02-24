@@ -286,6 +286,7 @@ export async function start(args: string[] = []) {
     await writeMemoryMcpConfig();
     if (settings.browser.enabled) await writeBrowserMcpConfig();
     await initAgentWorkspaces(settings);
+    await bootstrap(agentId);
     const result = await runUserMessage("prompt", payload, agentId);
     console.log(result.stdout);
     if (result.exitCode !== 0) process.exit(result.exitCode);

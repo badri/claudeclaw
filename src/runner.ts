@@ -248,16 +248,6 @@ async function loadPrompts(ctx?: AgentContext): Promise<string> {
     );
   }
 
-  // BOOT.md — session-start instructions (read queue files, summarize state, etc.)
-  // Injected last so it runs after identity/memory context is established.
-  const bootMd = join(workspaceDir, "BOOT.md");
-  if (existsSync(bootMd)) {
-    try {
-      const content = await Bun.file(bootMd).text();
-      if (content.trim()) parts.push(content.trim());
-    } catch {}
-  }
-
   return parts.join("\n\n");
 }
 
@@ -575,7 +565,17 @@ export async function bootstrap(agentId?: string): Promise<void> {
   const existing = await getSession(ctx.agentId);
   if (existing) return;
 
+  // Use BOOT.md as the bootstrap prompt if it exists — runs the session-start checklist
+  const bootMd = join(ctx.paths.workspaceDir, "BOOT.md");
+  let bootPrompt = "Wakeup, my friend!";
+  if (existsSync(bootMd)) {
+    try {
+      const content = await Bun.file(bootMd).text();
+      if (content.trim()) bootPrompt = content.trim();
+    } catch {}
+  }
+
   console.log(`[${new Date().toLocaleTimeString()}] Bootstrapping new session...`);
-  await execClaude("bootstrap", "Wakeup, my friend!", ctx);
+  await execClaude("bootstrap", bootPrompt, ctx);
   console.log(`[${new Date().toLocaleTimeString()}] Bootstrap complete — session is live.`);
 }
