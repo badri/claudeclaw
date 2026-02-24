@@ -211,6 +211,7 @@ function buildSecurityArgs(security: SecurityConfig, browser?: BrowserConfig): s
  *   2. SOUL.md     — behavioral guidelines
  *   3. USER.md     — user context (name, timezone, goals, people)
  *   4. IDENTITY.md — assistant identity / persona override
+ *   5. BOOT.md     — session-start checklist (read queues, summarize state, etc.)
  *
  * MEMORY.md is no longer injected wholesale. Instead, memory_search and
  * memory_get MCP tools are available for on-demand recall.
@@ -245,6 +246,16 @@ async function loadPrompts(ctx?: AgentContext): Promise<string> {
       "run memory_search with a relevant query, then use memory_get to pull only the needed lines. " +
       "Citations: include Source: <path#line> when it helps verify memory snippets."
     );
+  }
+
+  // BOOT.md — session-start instructions (read queue files, summarize state, etc.)
+  // Injected last so it runs after identity/memory context is established.
+  const bootMd = join(workspaceDir, "BOOT.md");
+  if (existsSync(bootMd)) {
+    try {
+      const content = await Bun.file(bootMd).text();
+      if (content.trim()) parts.push(content.trim());
+    } catch {}
   }
 
   return parts.join("\n\n");
