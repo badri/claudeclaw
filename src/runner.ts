@@ -219,13 +219,27 @@ function buildSecurityArgs(security: SecurityConfig, browser?: BrowserConfig): s
 async function loadPrompts(ctx?: AgentContext): Promise<string> {
   const paths = ctx?.paths ?? getAgentPaths("main");
   const workspaceDir = paths.workspaceDir;
+
+  // If the agent config has an inline systemPrompt, use it instead of AGENTS.md
+  const agentConfig = ctx
+    ? getSettings().agents?.list?.find((a) => a.id === ctx.agentId)
+    : undefined;
+  const agentsMdFallback = agentConfig?.systemPrompt
+    ? undefined  // skip file lookup — we'll inject inline below
+    : join(PROMPTS_DIR, "IDENTITY.md");
+
   const candidates: Array<{ workspace: string; fallback: string }> = [
-    { workspace: paths.agentsMd, fallback: join(PROMPTS_DIR, "IDENTITY.md") },
+    { workspace: paths.agentsMd, fallback: agentsMdFallback ?? "" },
     { workspace: paths.soulMd, fallback: join(PROMPTS_DIR, "SOUL.md") },
     { workspace: join(workspaceDir, "USER.md"), fallback: join(PROMPTS_DIR, "USER.md") },
     { workspace: join(workspaceDir, "IDENTITY.md"), fallback: "" },
   ];
   const parts: string[] = [];
+
+  // Inject inline systemPrompt before workspace files when AGENTS.md doesn't exist
+  if (agentConfig?.systemPrompt && !existsSync(paths.agentsMd)) {
+    parts.push(agentConfig.systemPrompt.trim());
+  }
 
   for (const { workspace, fallback } of candidates) {
     const file = existsSync(workspace) ? workspace : fallback;
@@ -565,9 +579,13 @@ export async function initAgentWorkspaces(settings: Settings): Promise<void> {
     await mkdir(paths.workspaceDir, { recursive: true });
     await mkdir(paths.memoryDir, { recursive: true });
 
-    // Seed default prompt files from bundled templates if not yet present
+    // Seed default prompt files from bundled templates if not yet present.
+    // Catchall agents get the router template; others get the default identity.
     if (!existsSync(paths.agentsMd)) {
-      const src = join(PROMPTS_DIR, "IDENTITY.md");
+      const isCatchall = agentConfig.id === "catchall" || agentConfig.role === "catchall";
+      const src = isCatchall
+        ? join(PROMPTS_DIR, "catchall", "ROUTER.md")
+        : join(PROMPTS_DIR, "IDENTITY.md");
       if (existsSync(src)) {
         try { await copyFile(src, paths.agentsMd); } catch {}
       }

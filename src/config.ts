@@ -90,6 +90,11 @@ export interface AgentConfig {
   systemPrompt?: string;
   /** Optional workspace directory override; defaults to ~/.claudeclaw/agents/<id>/ */
   workspace?: string;
+  /**
+   * Optional role hint. 'catchall' seeds the routing template on first init
+   * and marks this agent as the default receiver for unrouted messages.
+   */
+  role?: "catchall" | string;
 }
 
 export interface AgentsConfig {
@@ -242,6 +247,7 @@ function parseAgentConfig(raw: unknown): AgentConfig | null {
     name: typeof r.name === "string" ? r.name.trim() : undefined,
     systemPrompt: typeof r.systemPrompt === "string" ? r.systemPrompt.trim() : undefined,
     workspace: typeof r.workspace === "string" ? r.workspace.trim() : undefined,
+    role: typeof r.role === "string" ? r.role.trim() : undefined,
   };
 }
 
