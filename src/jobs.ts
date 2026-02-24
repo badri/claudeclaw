@@ -8,6 +8,7 @@ export interface Job {
   prompt: string;
   recurring: boolean;
   notify: true | false | "error";
+  agentId: string;
 }
 
 function parseFrontmatterValue(raw: string): string {
@@ -50,29 +51,29 @@ function parseJobFile(name: string, content: string): Job | null {
     : notifyRaw === "error" ? "error"
     : true;
 
-  return { name, schedule, prompt, recurring, notify };
+  return { name, schedule, prompt, recurring, notify, agentId: "main" };
 }
 
-export async function loadJobs(): Promise<Job[]> {
+export async function loadJobs(dir: string = JOBS_DIR, agentId: string = "main"): Promise<Job[]> {
   const jobs: Job[] = [];
   let files: string[];
   try {
-    files = await readdir(JOBS_DIR);
+    files = await readdir(dir);
   } catch {
     return jobs;
   }
 
   for (const file of files) {
     if (!file.endsWith(".md")) continue;
-    const content = await Bun.file(join(JOBS_DIR, file)).text();
+    const content = await Bun.file(join(dir, file)).text();
     const job = parseJobFile(file.replace(/\.md$/, ""), content);
-    if (job) jobs.push(job);
+    if (job) jobs.push({ ...job, agentId });
   }
   return jobs;
 }
 
-export async function clearJobSchedule(jobName: string): Promise<void> {
-  const path = join(JOBS_DIR, `${jobName}.md`);
+export async function clearJobSchedule(jobName: string, dir: string = JOBS_DIR): Promise<void> {
+  const path = join(dir, `${jobName}.md`);
   const content = await Bun.file(path).text();
   const match = content.match(/^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/);
   if (!match) return;
