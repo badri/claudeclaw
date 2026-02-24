@@ -7,6 +7,7 @@ import { writeState, type StateData } from "../statusline";
 import { cronMatches, nextCronMatch } from "../cron";
 import { clearJobSchedule, loadJobs } from "../jobs";
 import { writePidFile, cleanupPidFile, checkExistingDaemon } from "../pid";
+import { JOBS_DIR, getAgentPaths } from "../paths";
 import { initConfig, loadSettings, reloadSettings, resolvePrompt, type HeartbeatConfig, type Settings } from "../config";
 import { getDayAndMinuteAtOffset } from "../timezone";
 import { startWebUi, type WebServerHandle } from "../web";
@@ -329,7 +330,19 @@ export async function start(args: string[] = []) {
   await writeMemoryMcpConfig();
   if (settings.browser.enabled) await writeBrowserMcpConfig();
   await initAgentWorkspaces(settings);
-  const jobs = await loadJobs();
+  async function loadAllJobs(s: Settings): Promise<Job[]> {
+    const agentList = s.agents?.list ?? [];
+    const sources = [
+      { agentId: "main", dir: JOBS_DIR },
+      ...agentList.map((a) => ({ agentId: a.id, dir: getAgentPaths(a.id).jobsDir })),
+    ];
+    const results = await Promise.all(
+      sources.map(({ agentId, dir }) => loadJobs(dir, agentId))
+    );
+    return results.flat();
+  }
+
+  const jobs = await loadAllJobs(settings);
   const webEnabled = webFlag || webPortFlag !== null || settings.web.enabled;
   const webPort = webPortFlag ?? settings.web.port;
 
@@ -355,7 +368,7 @@ export async function start(args: string[] = []) {
   console.log(`  Web UI: ${webEnabled ? `http://${settings.web.host}:${webPort}` : "disabled"}`);
   if (debugFlag) console.log("  Debug: enabled");
   console.log(`  Jobs loaded: ${jobs.length}`);
-  jobs.forEach((j) => console.log(`    - ${j.name} [${j.schedule}]`));
+  jobs.forEach((j) => console.log(`    - ${j.name} [${j.schedule}] → agent: ${j.agentId}`));
 
   // --- Mutable state ---
   let currentSettings: Settings = settings;
@@ -464,7 +477,7 @@ export async function start(args: string[] = []) {
             console.log(`[${ts()}] Heartbeat settings updated from Web UI`);
           },
           onJobsChanged: async () => {
-            currentJobs = await loadJobs();
+            currentJobs = await loadAllJobs(currentSettings);
             scheduleHeartbeat();
             updateState();
             console.log(`[${ts()}] Jobs reloaded from Web UI`);
@@ -601,7 +614,7 @@ export async function start(args: string[] = []) {
   setInterval(async () => {
     try {
       const newSettings = await reloadSettings();
-      const newJobs = await loadJobs();
+      const newJobs = await loadAllJobs(newSettings);
 
       // Detect heartbeat config changes
       const hbChanged =
@@ -639,7 +652,7 @@ export async function start(args: string[] = []) {
       const oldJobNames = currentJobs.map((j) => `${j.name}:${j.schedule}:${j.prompt}`).sort().join("|");
       if (jobNames !== oldJobNames) {
         console.log(`[${ts()}] Jobs reloaded: ${newJobs.length} job(s)`);
-        newJobs.forEach((j) => console.log(`    - ${j.name} [${j.schedule}]`));
+        newJobs.forEach((j) => console.log(`    - ${j.name} [${j.schedule}] → agent: ${j.agentId}`));
       }
       currentJobs = newJobs;
 
@@ -684,7 +697,7 @@ export async function start(args: string[] = []) {
     for (const job of currentJobs) {
       if (cronMatches(job.schedule, now, currentSettings.timezoneOffsetMinutes)) {
         resolvePrompt(job.prompt)
-          .then((prompt) => run(job.name, prompt))
+          .then((prompt) => run(job.name, prompt, job.agentId))
           .then((r) => {
             if (job.notify === false) return;
             if (job.notify === "error" && r.exitCode === 0) return;
@@ -693,7 +706,7 @@ export async function start(args: string[] = []) {
           .finally(async () => {
             if (job.recurring) return;
             try {
-              await clearJobSchedule(job.name);
+              await clearJobSchedule(job.name, getAgentPaths(job.agentId).jobsDir);
               console.log(`[${ts()}] Cleared schedule for one-time job: ${job.name}`);
             } catch (err) {
               console.error(`[${ts()}] Failed to clear schedule for ${job.name}:`, err);
