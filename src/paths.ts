@@ -75,6 +75,7 @@ export interface AgentPaths {
   sessionFile: string;
   memoryMcpConfig: string;
   mcpConfig: string;
+  jobsDir: string;
 }
 
 /**
@@ -95,6 +96,7 @@ export function getAgentPaths(agentId: string, customWorkspace?: string): AgentP
       sessionFile: SESSION_FILE,
       memoryMcpConfig: MEMORY_MCP_CONFIG,
       mcpConfig: join(CLAUDECLAW_DIR, "mcp.json"),
+      jobsDir: JOBS_DIR,
     };
   }
 
@@ -108,5 +110,6 @@ export function getAgentPaths(agentId: string, customWorkspace?: string): AgentP
     sessionFile: join(workspaceDir, "session.json"),
     memoryMcpConfig: join(workspaceDir, "memory-mcp.json"),
     mcpConfig: join(workspaceDir, "mcp.json"),
+    jobsDir: join(workspaceDir, "jobs"),
   };
 }
