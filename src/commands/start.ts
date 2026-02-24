@@ -333,13 +333,11 @@ export async function start(args: string[] = []) {
   const webEnabled = webFlag || webPortFlag !== null || settings.web.enabled;
   const webPort = webPortFlag ?? settings.web.port;
 
-  await setupStatusline();
   await writePidFile();
   let web: WebServerHandle | null = null;
 
   async function shutdown() {
     if (web) web.stop();
-    await teardownStatusline();
     await cleanupPidFile();
     process.exit(0);
   }
