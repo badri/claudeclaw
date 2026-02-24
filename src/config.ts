@@ -19,7 +19,7 @@ const DEFAULT_SETTINGS: Settings = {
     prompt: "",
     excludeWindows: [],
   },
-  telegram: { token: "", allowedUserIds: [] },
+  telegram: { token: "", allowedUserIds: [], routes: [] },
   security: { level: "moderate", allowedTools: [], disallowedTools: [] },
   web: { enabled: false, host: "127.0.0.1", port: 4632 },
   memory: {
@@ -42,9 +42,17 @@ export interface HeartbeatConfig {
   excludeWindows: HeartbeatExcludeWindow[];
 }
 
+export interface TelegramRoute {
+  chatId: number;
+  topicId?: number;
+  agentId: string;
+}
+
 export interface TelegramConfig {
   token: string;
   allowedUserIds: number[];
+  /** Route table: maps chat/topic → agent. More-specific rules (chatId+topicId) win. */
+  routes: TelegramRoute[];
 }
 
 export type SecurityLevel =
@@ -178,6 +186,7 @@ function parseSettings(raw: Record<string, any>): Settings {
     telegram: {
       token: raw.telegram?.token ?? "",
       allowedUserIds: raw.telegram?.allowedUserIds ?? [],
+      routes: parseTelegramRoutes(raw.telegram?.routes),
     },
     security: {
       level,
@@ -221,6 +230,24 @@ function parseAgentsConfig(raw: unknown): AgentsConfig {
     ? r.list.map(parseAgentConfig).filter((a): a is AgentConfig => a !== null)
     : [];
   return { default: defaultAgent, list };
+}
+
+function parseTelegramRoutes(raw: unknown): TelegramRoute[] {
+  if (!Array.isArray(raw)) return [];
+  const routes: TelegramRoute[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const r = entry as Record<string, unknown>;
+    const chatId = Number(r.chatId);
+    const agentId = typeof r.agentId === "string" ? r.agentId.trim() : "";
+    if (!Number.isFinite(chatId) || !agentId) continue;
+    const route: TelegramRoute = { chatId, agentId };
+    if (typeof r.topicId === "number" && Number.isFinite(r.topicId)) {
+      route.topicId = r.topicId;
+    }
+    routes.push(route);
+  }
+  return routes;
 }
 
 const VALID_BROWSER_ENGINES = new Set<BrowserEngine>(["chromium", "lightpanda"]);

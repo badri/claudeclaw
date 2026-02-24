@@ -1,5 +1,5 @@
 import { ensureProjectClaudeMd, run, runUserMessage } from "../runner";
-import { getSettings, loadSettings } from "../config";
+import { getSettings, loadSettings, type TelegramRoute } from "../config";
 import { resetSession } from "../sessions";
 import { transcribeAudioToText } from "../whisper";
 import { mkdir } from "node:fs/promises";
@@ -81,6 +81,7 @@ interface TelegramMessage {
   from?: TelegramUser;
   reply_to_message?: { from?: TelegramUser };
   chat: { id: number; type: string };
+  message_thread_id?: number;
   text?: string;
   caption?: string;
   photo?: TelegramPhotoSize[];
@@ -443,16 +444,41 @@ async function handleMyChatMember(update: TelegramMyChatMemberUpdate): Promise<v
   }
 }
 
+// --- Agent routing ---
+
+function resolveAgentFromRoutes(
+  chatId: number,
+  topicId: number | undefined,
+  routes: TelegramRoute[],
+  defaultAgent: string
+): string {
+  // More-specific rule (chatId + topicId) takes precedence over chat-only rule
+  if (topicId !== undefined) {
+    const specific = routes.find((r) => r.chatId === chatId && r.topicId === topicId);
+    if (specific) return specific.agentId;
+  }
+  const chatOnly = routes.find((r) => r.chatId === chatId && r.topicId === undefined);
+  if (chatOnly) return chatOnly.agentId;
+  return defaultAgent;
+}
+
 // --- Message handler ---
 
 async function handleMessage(message: TelegramMessage): Promise<void> {
-  const config = getSettings().telegram;
+  const settings = getSettings();
+  const config = settings.telegram;
   const userId = message.from?.id;
   const chatId = message.chat.id;
   const { text } = getMessageTextAndEntities(message);
   const chatType = message.chat.type;
   const isPrivate = chatType === "private";
   const isGroup = chatType === "group" || chatType === "supergroup";
+  const agentId = resolveAgentFromRoutes(
+    chatId,
+    message.message_thread_id,
+    config.routes,
+    settings.agents?.default ?? "main"
+  );
   const hasImage = Boolean((message.photo && message.photo.length > 0) || isImageDocument(message.document));
   const hasVoice = Boolean(message.voice || message.audio || isAudioDocument(message.document));
 
@@ -495,8 +521,9 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
   }
 
   if (command === "/reset") {
-    await resetSession();
-    await sendMessage(config.token, chatId, "Global session reset. Next message starts fresh.");
+    await resetSession(agentId);
+    const label = agentId === "main" ? "Session" : `Session for agent "${agentId}"`;
+    await sendMessage(config.token, chatId, `${label} reset. Next message starts fresh.`);
     return;
   }
 
@@ -559,7 +586,7 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
       );
     }
     const prefixedPrompt = promptParts.join("\n");
-    const result = await runUserMessage("telegram", prefixedPrompt);
+    const result = await runUserMessage("telegram", prefixedPrompt, agentId);
 
     if (result.exitCode !== 0) {
       await sendMessage(config.token, chatId, `Error (exit ${result.exitCode}): ${result.stderr || "Unknown error"}`);

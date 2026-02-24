@@ -152,6 +152,105 @@ npx playwright install chromium
 
 ---
 
+## Agents
+
+ClaudeClaw supports multiple named agents, each with its own isolated workspace, memory, and session. This lets you run specialised contexts in parallel — a `content` agent for writing, a `daily` agent for planning, an `ideas` agent for brainstorming — without them sharing context or memory.
+
+The **`main`** agent is always present and maps to the legacy `~/.claudeclaw/workspace/` directory. Existing installs require no migration.
+
+### Directory layout
+
+```
+~/.claudeclaw/
+  workspace/           ← main agent (legacy, always present)
+    AGENTS.md
+    SOUL.md
+    MEMORY.md
+    memory/
+  agents/
+    content/           ← additional agents under ~/.claudeclaw/agents/<id>/
+      AGENTS.md
+      SOUL.md
+      MEMORY.md
+      memory/
+      session.json
+      memory-mcp.json
+      mcp.json
+    ideas/
+      ...
+```
+
+### Configuring agents
+
+Add an `agents` block to `~/.claudeclaw/settings.json`. Workspace directories and MCP configs are created automatically at startup:
+
+```json
+"agents": {
+  "default": "main",
+  "list": [
+    {
+      "id": "content",
+      "name": "Content Writer",
+      "systemPrompt": "You are a creative writing assistant focused on long-form content."
+    },
+    {
+      "id": "daily",
+      "name": "Daily Planner"
+    },
+    {
+      "id": "ideas",
+      "workspace": "/custom/path/ideas-workspace"
+    }
+  ]
+}
+```
+
+Each agent supports:
+- `id` — unique slug used in CLI flags and routing rules
+- `name` — optional display name
+- `systemPrompt` — inline text or path to a `.md` file; overrides `AGENTS.md` for this agent
+- `workspace` — optional absolute path override; defaults to `~/.claudeclaw/agents/<id>/`
+
+### CLI usage
+
+```bash
+# One-shot: run a prompt with a specific agent
+claudeclaw start --prompt "draft a blog post about X" --agent content
+
+# Send a message to a specific agent's session
+claudeclaw send "add this to the ideas list" --agent ideas
+
+# List all configured agents
+claudeclaw agents list
+
+# Show config + workspace paths + session state for an agent
+claudeclaw agents show content
+
+# Clear the session for an agent (forces a fresh context next run)
+claudeclaw agents reset content
+```
+
+If `--agent` is omitted, the `agents.default` value is used (defaults to `main`).
+
+### Telegram routing
+
+Map Telegram chats or topic threads to specific agents by adding a `routes` array to the `telegram` config:
+
+```json
+"telegram": {
+  "token": "your-bot-token",
+  "allowedUserIds": [123456789],
+  "routes": [
+    { "chatId": -100123456789, "agentId": "content" },
+    { "chatId": -100123456789, "topicId": 42, "agentId": "ideas" }
+  ]
+}
+```
+
+Rules are matched most-specific first (`chatId + topicId` before `chatId`-only). Unmatched messages fall back to `agents.default`. The `/reset` command resets only the matched agent's session.
+
+---
+
 ## Features
 
 | Feature | Status |
@@ -194,7 +293,8 @@ See [ROADMAP.md](./ROADMAP.md) for full details.
   },
   "telegram": {
     "token": "your-bot-token",
-    "allowedUserIds": [123456789]
+    "allowedUserIds": [123456789],
+    "routes": []
   },
   "security": {
     "level": "moderate",
@@ -213,6 +313,10 @@ See [ROADMAP.md](./ROADMAP.md) for full details.
   "browser": {
     "enabled": false,
     "engine": "chromium"
+  },
+  "agents": {
+    "default": "main",
+    "list": []
   }
 }
 ```
