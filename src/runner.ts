@@ -428,9 +428,11 @@ async function execClaude(name: string, prompt: string, ctx: AgentContext): Prom
   const hasMemory = existsSync(agentMemoryMcp);
   const hasBrowser = existsSync(BROWSER_MCP_CONFIG);
   const hasBridge = existsSync(AGENT_BRIDGE_MCP_CONFIG);
+  const hasExtra = existsSync(ctx.paths.extraMcpConfig);
   const extras = [
     hasBrowser ? BROWSER_MCP_CONFIG : null,
     hasBridge ? AGENT_BRIDGE_MCP_CONFIG : null,
+    hasExtra ? ctx.paths.extraMcpConfig : null,
   ].filter(Boolean) as string[];
 
   if (extras.length > 0 || (hasMemory && extras.length === 0)) {
