@@ -2,7 +2,7 @@ import { join, isAbsolute } from "path";
 import { mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import { normalizeTimezoneName, resolveTimezoneOffsetMinutes } from "./timezone";
-import { CLAUDECLAW_DIR, SETTINGS_FILE, JOBS_DIR, LOGS_DIR, WORKSPACE_DIR, MEMORY_DIR, SKILLS_DIR, TELEGRAM_INBOX_DIR, WHISPER_DIR } from "./paths";
+import { CLAUDECLAW_DIR, SETTINGS_FILE, JOBS_DIR, LOGS_DIR, WORKSPACE_DIR, MEMORY_DIR, SKILLS_DIR, TELEGRAM_INBOX_DIR, SLACK_INBOX_DIR, WHISPER_DIR } from "./paths";
 
 const DEFAULT_SETTINGS: Settings = {
   model: "",
@@ -20,6 +20,7 @@ const DEFAULT_SETTINGS: Settings = {
     excludeWindows: [],
   },
   telegram: { token: "", allowedUserIds: [], routes: [] },
+  slack: { botToken: "", appToken: "", allowedChannelIds: [], routes: [] },
   security: { level: "moderate", allowedTools: [], disallowedTools: [] },
   web: { enabled: false, host: "127.0.0.1", port: 4632 },
   memory: {
@@ -53,6 +54,19 @@ export interface TelegramConfig {
   allowedUserIds: number[];
   /** Route table: maps chat/topic → agent. More-specific rules (chatId+topicId) win. */
   routes: TelegramRoute[];
+}
+
+export interface SlackRoute {
+  channelId: string;
+  agentId: string;
+}
+
+export interface SlackConfig {
+  botToken: string;
+  appToken: string;
+  allowedChannelIds: string[];
+  /** Route table: maps channelId → agent. Falls back to default agent if no match. */
+  routes: SlackRoute[];
 }
 
 export type SecurityLevel =
@@ -93,6 +107,7 @@ export interface Settings {
   timezoneOffsetMinutes: number;
   heartbeat: HeartbeatConfig;
   telegram: TelegramConfig;
+  slack: SlackConfig;
   security: SecurityConfig;
   web: WebConfig;
   memory: MemoryConfig;
@@ -145,6 +160,7 @@ export async function initConfig(): Promise<void> {
   await mkdir(MEMORY_DIR, { recursive: true });
   await mkdir(SKILLS_DIR, { recursive: true });
   await mkdir(TELEGRAM_INBOX_DIR, { recursive: true });
+  await mkdir(SLACK_INBOX_DIR, { recursive: true });
   await mkdir(WHISPER_DIR, { recursive: true });
 
   if (!existsSync(SETTINGS_FILE)) {
@@ -187,6 +203,12 @@ function parseSettings(raw: Record<string, any>): Settings {
       token: raw.telegram?.token ?? "",
       allowedUserIds: raw.telegram?.allowedUserIds ?? [],
       routes: parseTelegramRoutes(raw.telegram?.routes),
+    },
+    slack: {
+      botToken: raw.slack?.botToken ?? "",
+      appToken: raw.slack?.appToken ?? "",
+      allowedChannelIds: Array.isArray(raw.slack?.allowedChannelIds) ? raw.slack.allowedChannelIds : [],
+      routes: parseSlackRoutes(raw.slack?.routes),
     },
     security: {
       level,
@@ -246,6 +268,20 @@ function parseTelegramRoutes(raw: unknown): TelegramRoute[] {
       route.topicId = r.topicId;
     }
     routes.push(route);
+  }
+  return routes;
+}
+
+function parseSlackRoutes(raw: unknown): SlackRoute[] {
+  if (!Array.isArray(raw)) return [];
+  const routes: SlackRoute[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const r = entry as Record<string, unknown>;
+    const channelId = typeof r.channelId === "string" ? r.channelId.trim() : "";
+    const agentId = typeof r.agentId === "string" ? r.agentId.trim() : "";
+    if (!channelId || !agentId) continue;
+    routes.push({ channelId, agentId });
   }
   return routes;
 }

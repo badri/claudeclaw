@@ -385,6 +385,24 @@ export async function start(args: string[] = []) {
   await initTelegram(currentSettings.telegram.token);
   if (!telegramToken) console.log("  Telegram: not configured");
 
+  // --- Slack ---
+  let slackBotToken = "";
+
+  async function initSlack(botToken: string, appToken: string) {
+    if (botToken && appToken && botToken !== slackBotToken) {
+      const { startSocketMode } = await import("./slack");
+      startSocketMode();
+      slackBotToken = botToken;
+      console.log(`[${ts()}] Slack: enabled`);
+    } else if ((!botToken || !appToken) && slackBotToken) {
+      slackBotToken = "";
+      console.log(`[${ts()}] Slack: disabled`);
+    }
+  }
+
+  await initSlack(currentSettings.slack.botToken, currentSettings.slack.appToken);
+  if (!slackBotToken) console.log("  Slack: not configured");
+
   function isAddrInUse(err: unknown): boolean {
     if (!err || typeof err !== "object") return false;
     const code = "code" in err ? String((err as { code?: unknown }).code) : "";
@@ -627,6 +645,9 @@ export async function start(args: string[] = []) {
 
       // Telegram changes
       await initTelegram(newSettings.telegram.token);
+
+      // Slack changes
+      await initSlack(newSettings.slack.botToken, newSettings.slack.appToken);
     } catch (err) {
       console.error(`[${ts()}] Hot-reload error:`, err);
     }
@@ -645,6 +666,7 @@ export async function start(args: string[] = []) {
       })),
       security: currentSettings.security.level,
       telegram: !!currentSettings.telegram.token,
+      slack: !!(currentSettings.slack.botToken && currentSettings.slack.appToken),
       startedAt: daemonStartedAt,
       web: {
         enabled: !!web,

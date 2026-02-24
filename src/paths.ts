@@ -48,6 +48,7 @@ export const JOBS_DIR = join(WORKSPACE_DIR, "jobs");
 // Runtime dirs
 export const LOGS_DIR = join(CLAUDECLAW_DIR, "logs");
 export const TELEGRAM_INBOX_DIR = join(CLAUDECLAW_DIR, "inbox", "telegram");
+export const SLACK_INBOX_DIR = join(CLAUDECLAW_DIR, "inbox", "slack");
 export const WHISPER_DIR = join(CLAUDECLAW_DIR, "whisper");
 
 // MCP config written at startup so runner.ts can pass --mcp-config to claude

@@ -6,6 +6,7 @@ export interface StateData {
   jobs: { name: string; nextAt: number }[];
   security: string;
   telegram: boolean;
+  slack?: boolean;
   startedAt: number;
   web?: { enabled: boolean; host: string; port: number };
 }
