@@ -207,22 +207,28 @@ function buildSecurityArgs(security: SecurityConfig, browser?: BrowserConfig): s
  * priority over bundled templates (prompts/). Falls back gracefully if missing.
  *
  * Load order:
- *   1. AGENTS.md  — agent identity / persona
- *   2. SOUL.md    — behavioral guidelines
+ *   1. AGENTS.md   — agent identity / persona
+ *   2. SOUL.md     — behavioral guidelines
+ *   3. USER.md     — user context (name, timezone, goals, people)
+ *   4. IDENTITY.md — assistant identity / persona override
  *
  * MEMORY.md is no longer injected wholesale. Instead, memory_search and
  * memory_get MCP tools are available for on-demand recall.
  */
 async function loadPrompts(ctx?: AgentContext): Promise<string> {
   const paths = ctx?.paths ?? getAgentPaths("main");
+  const workspaceDir = paths.workspaceDir;
   const candidates: Array<{ workspace: string; fallback: string }> = [
     { workspace: paths.agentsMd, fallback: join(PROMPTS_DIR, "IDENTITY.md") },
     { workspace: paths.soulMd, fallback: join(PROMPTS_DIR, "SOUL.md") },
+    { workspace: join(workspaceDir, "USER.md"), fallback: join(PROMPTS_DIR, "USER.md") },
+    { workspace: join(workspaceDir, "IDENTITY.md"), fallback: "" },
   ];
   const parts: string[] = [];
 
   for (const { workspace, fallback } of candidates) {
     const file = existsSync(workspace) ? workspace : fallback;
+    if (!file) continue;
     try {
       const content = await Bun.file(file).text();
       if (content.trim()) parts.push(content.trim());
@@ -230,12 +236,6 @@ async function loadPrompts(ctx?: AgentContext): Promise<string> {
       // file missing — skip silently
     }
   }
-
-  // Also load USER.md from bundled prompts (user-editable identity context)
-  try {
-    const user = await Bun.file(join(PROMPTS_DIR, "USER.md")).text();
-    if (user.trim()) parts.push(user.trim());
-  } catch {}
 
   // Memory recall instruction — tells Claude to use tools instead of relying on pre-loaded content
   if (existsSync(paths.memoryMd)) {
