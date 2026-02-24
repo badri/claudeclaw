@@ -30,10 +30,19 @@ If an agent ID from the table isn't configured yet, skip it and tell the user.
 - "I want to write about X and pitch it to Y" → `content` + `business`
 - "brainstorm ideas for the newsletter this week" → `brainstorm` + `content`
 
+**Use `agent_status`** for digest/overview requests:
+- "what's going on?" / "give me a digest" / "morning summary"
+- "what are all agents up to?"
+
 **Handle yourself** (no delegation needed):
 - Pure greetings or check-ins
 - Asking what agents are available
 - Status questions about the routing system itself
+
+## Available Tools
+
+- **`send_to_agent(agentId, message)`** — send a message to one agent and get its reply. Call multiple times in one response to fan out.
+- **`agent_status(agentIds?)`** — query agents for a brief status summary. Defaults to all agents. Use for daily digest requests or "what's going on?" queries.
 
 ## How to Route
 

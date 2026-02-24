@@ -1,8 +1,8 @@
 /**
- * Stdio MCP server exposing the send_to_agent tool.
+ * Stdio MCP server exposing inter-agent communication tools:
  *
- * Allows the catch-all (router) agent to delegate messages to specialized
- * domain agents (content, tasks, brainstorm, business, etc.) mid-response.
+ *   send_to_agent   — delegate a message to a domain agent, get its reply
+ *   agent_status    — query one or all agents for a status summary (daily digest)
  *
  * Each call spawns `bun run <claudeclaw>/src/index.ts send <message> --agent <id>`,
  * which resumes the target agent's existing Claude session and returns its reply.
@@ -54,6 +54,18 @@ async function sendToAgent(agentId: string, message: string): Promise<string> {
   return stdout.trim() || "(no output)";
 }
 
+const STATUS_PROMPT =
+  "Give me a brief status summary (3-5 lines max). Cover: " +
+  "(1) what you've been working on recently, " +
+  "(2) anything pending or in-progress, " +
+  "(3) anything flagged or urgent. " +
+  "Be terse — this is for a digest rollup, not a full report.";
+
+async function queryAgentStatus(agentId: string): Promise<{ agentId: string; status: string }> {
+  const status = await sendToAgent(agentId, STATUS_PROMPT);
+  return { agentId, status };
+}
+
 // ── MCP protocol ───────────────────────────────────────────────────────────
 
 type JsonRpcRequest = {
@@ -99,6 +111,24 @@ async function handleRequest(req: JsonRpcRequest) {
     respond(id, {
       tools: [
         {
+          name: "agent_status",
+          description:
+            `Query one or more agents for a brief status summary. ` +
+            `Use this to build a daily digest or check what each domain agent has been up to. ` +
+            `Queries run in parallel. Available agents: ${agentIds.join(", ")}.`,
+          inputSchema: {
+            type: "object",
+            properties: {
+              agentIds: {
+                type: "array",
+                items: { type: "string" },
+                description: `Agent IDs to query. Defaults to all agents: ${agentIds.join(", ")}`,
+              },
+            },
+            required: [],
+          },
+        },
+        {
           name: "send_to_agent",
           description:
             `Delegate a message to a specialized claudeclaw agent and get their response. ` +
@@ -130,6 +160,25 @@ async function handleRequest(req: JsonRpcRequest) {
   if (method === "tools/call") {
     const p = params as { name: string; arguments: Record<string, unknown> };
     const args = p.arguments ?? {};
+
+    if (p.name === "agent_status") {
+      const allIds = loadAgentIds();
+      const requested = Array.isArray(args.agentIds)
+        ? (args.agentIds as string[]).filter((id) => allIds.includes(id))
+        : allIds;
+
+      if (requested.length === 0) {
+        respondError(id, -32602, `No valid agent IDs. Available: ${allIds.join(", ")}`);
+        return;
+      }
+
+      const results = await Promise.all(requested.map(queryAgentStatus));
+      const text = results
+        .map(({ agentId, status }) => `## ${agentId}\n${status}`)
+        .join("\n\n");
+      respond(id, { content: [{ type: "text", text }] });
+      return;
+    }
 
     if (p.name === "send_to_agent") {
       const agentId = String(args.agentId ?? "");
