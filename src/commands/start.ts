@@ -2,7 +2,7 @@ import { writeFile, unlink, mkdir } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
-import { run, runUserMessage, bootstrap, ensureProjectClaudeMd, loadHeartbeatPromptTemplate, writeMemoryMcpConfig, writeBrowserMcpConfig } from "../runner";
+import { run, runUserMessage, bootstrap, ensureProjectClaudeMd, loadHeartbeatPromptTemplate, writeMemoryMcpConfig, writeBrowserMcpConfig, initAgentWorkspaces } from "../runner";
 import { writeState, type StateData } from "../statusline";
 import { cronMatches, nextCronMatch } from "../cron";
 import { clearJobSchedule, loadJobs } from "../jobs";
@@ -11,6 +11,16 @@ import { initConfig, loadSettings, reloadSettings, resolvePrompt, type Heartbeat
 import { getDayAndMinuteAtOffset } from "../timezone";
 import { startWebUi, type WebServerHandle } from "../web";
 import type { Job } from "../jobs";
+
+function resolveAndValidateAgent(agentIdFlag: string | undefined, settings: Settings): string {
+  const agentId = agentIdFlag ?? settings.agents?.default ?? "main";
+  const validIds = new Set(["main", ...(settings.agents?.list ?? []).map((a) => a.id)]);
+  if (!validIds.has(agentId)) {
+    console.error(`Unknown agent: "${agentId}". Available: ${[...validIds].join(", ")}`);
+    process.exit(1);
+  }
+  return agentId;
+}
 
 const CLAUDE_DIR = join(homedir(), ".claude");
 const STATUSLINE_FILE = join(CLAUDE_DIR, "statusline.cjs");
@@ -200,6 +210,7 @@ export async function start(args: string[] = []) {
   let webFlag = false;
   let replaceExistingFlag = false;
   let webPortFlag: number | null = null;
+  let agentIdFlag: string | undefined;
   const payloadParts: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -216,6 +227,14 @@ export async function start(args: string[] = []) {
       webFlag = true;
     } else if (arg === "--replace-existing") {
       replaceExistingFlag = true;
+    } else if (arg === "--agent") {
+      const raw = args[i + 1];
+      if (!raw || raw.startsWith("--")) {
+        console.error("`--agent` requires an agent id.");
+        process.exit(1);
+      }
+      agentIdFlag = raw;
+      i++;
     } else if (arg === "--web-port") {
       const raw = args[i + 1];
       if (!raw) {
@@ -235,7 +254,7 @@ export async function start(args: string[] = []) {
   }
   const payload = payloadParts.join(" ").trim();
   if (hasPromptFlag && !payload) {
-    console.error("Usage: claudeclaw start --prompt <prompt> [--trigger] [--telegram] [--debug] [--web] [--web-port <port>] [--replace-existing]");
+    console.error("Usage: claudeclaw start --prompt <prompt> [--agent <id>] [--trigger] [--telegram] [--debug] [--web] [--web-port <port>] [--replace-existing]");
     process.exit(1);
   }
   if (!hasPromptFlag && payload) {
@@ -262,10 +281,12 @@ export async function start(args: string[] = []) {
 
     await initConfig();
     const settings = await loadSettings();
+    const agentId = resolveAndValidateAgent(agentIdFlag, settings);
     await ensureProjectClaudeMd();
     await writeMemoryMcpConfig();
     if (settings.browser.enabled) await writeBrowserMcpConfig();
-    const result = await runUserMessage("prompt", payload);
+    await initAgentWorkspaces(settings);
+    const result = await runUserMessage("prompt", payload, agentId);
     console.log(result.stdout);
     if (result.exitCode !== 0) process.exit(result.exitCode);
     return;
@@ -301,9 +322,11 @@ export async function start(args: string[] = []) {
 
   await initConfig();
   const settings = await loadSettings();
+  const agentId = resolveAndValidateAgent(agentIdFlag, settings);
   await ensureProjectClaudeMd();
   await writeMemoryMcpConfig();
   if (settings.browser.enabled) await writeBrowserMcpConfig();
+  await initAgentWorkspaces(settings);
   const jobs = await loadJobs();
   const webEnabled = webFlag || webPortFlag !== null || settings.web.enabled;
   const webPort = webPortFlag ?? settings.web.port;
@@ -539,7 +562,7 @@ export async function start(args: string[] = []) {
   // - normal mode: bootstrap to initialize session context
   if (hasTriggerFlag) {
     const triggerPrompt = hasPromptFlag ? payload : "Wake up, my friend!";
-    const triggerResult = await run("trigger", triggerPrompt);
+    const triggerResult = await run("trigger", triggerPrompt, agentId);
     console.log(triggerResult.stdout);
     if (telegramFlag) forwardToTelegram("", triggerResult);
     if (triggerResult.exitCode !== 0) {
@@ -548,7 +571,7 @@ export async function start(args: string[] = []) {
   } else {
     // Bootstrap the session first so system prompt is initial context
     // and session.json is created immediately.
-    await bootstrap();
+    await bootstrap(agentId);
   }
 
   // Install plugins without blocking daemon startup.

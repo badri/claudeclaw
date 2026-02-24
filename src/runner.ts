@@ -1,8 +1,8 @@
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readFile, writeFile, copyFile } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
 import { getSession, createSession } from "./sessions";
-import { getSettings, type ModelConfig, type SecurityConfig, type BrowserConfig } from "./config";
+import { getSettings, type Settings, type ModelConfig, type SecurityConfig, type BrowserConfig } from "./config";
 import { buildClockPromptPrefix } from "./timezone";
 import { LOGS_DIR, MEMORY_MCP_CONFIG, BROWSER_MCP_CONFIG, getAgentPaths, type AgentPaths } from "./paths";
 
@@ -522,6 +522,37 @@ function prefixUserMessageWithClock(prompt: string): string {
 
 export async function runUserMessage(name: string, prompt: string, agentId?: string): Promise<RunResult> {
   return run(name, prefixUserMessageWithClock(prompt), agentId);
+}
+
+/**
+ * Initialize workspace directories and MCP configs for all configured agents.
+ * The 'main' agent is already handled by initConfig(); this covers additional agents.
+ */
+export async function initAgentWorkspaces(settings: Settings): Promise<void> {
+  for (const agentConfig of settings.agents?.list ?? []) {
+    if (agentConfig.id === "main") continue;
+
+    const paths = getAgentPaths(agentConfig.id, agentConfig.workspace);
+    await mkdir(paths.workspaceDir, { recursive: true });
+    await mkdir(paths.memoryDir, { recursive: true });
+
+    // Seed default prompt files from bundled templates if not yet present
+    if (!existsSync(paths.agentsMd)) {
+      const src = join(PROMPTS_DIR, "IDENTITY.md");
+      if (existsSync(src)) {
+        try { await copyFile(src, paths.agentsMd); } catch {}
+      }
+    }
+    if (!existsSync(paths.soulMd)) {
+      const src = join(PROMPTS_DIR, "SOUL.md");
+      if (existsSync(src)) {
+        try { await copyFile(src, paths.soulMd); } catch {}
+      }
+    }
+
+    await writeMemoryMcpConfig(paths.memoryMcpConfig);
+    if (settings.browser.enabled) await writeBrowserMcpConfig();
+  }
 }
 
 /**

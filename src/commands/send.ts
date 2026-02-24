@@ -3,28 +3,53 @@ import { getSession } from "../sessions";
 import { loadSettings, initConfig } from "../config";
 
 export async function send(args: string[]) {
-  const telegramFlag = args.includes("--telegram");
-  const message = args.filter((a) => a !== "--telegram").join(" ");
+  let telegramFlag = false;
+  let agentIdFlag: string | undefined;
+  const messageParts: string[] = [];
 
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--telegram") {
+      telegramFlag = true;
+    } else if (arg === "--agent") {
+      const raw = args[i + 1];
+      if (!raw || raw.startsWith("--")) {
+        console.error("`--agent` requires an agent id.");
+        process.exit(1);
+      }
+      agentIdFlag = raw;
+      i++;
+    } else {
+      messageParts.push(arg);
+    }
+  }
+
+  const message = messageParts.join(" ");
   if (!message) {
-    console.error("Usage: claudeclaw send <message> [--telegram]");
+    console.error("Usage: claudeclaw send <message> [--agent <id>] [--telegram]");
     process.exit(1);
   }
 
   await initConfig();
-  await loadSettings();
+  const settings = await loadSettings();
 
-  const session = await getSession();
-  if (!session) {
-    console.error("No active session. Start the daemon first.");
+  const agentId = agentIdFlag ?? settings.agents?.default ?? "main";
+  const validIds = new Set(["main", ...(settings.agents?.list ?? []).map((a) => a.id)]);
+  if (!validIds.has(agentId)) {
+    console.error(`Unknown agent: "${agentId}". Available: ${[...validIds].join(", ")}`);
     process.exit(1);
   }
 
-  const result = await runUserMessage("send", message);
+  const session = await getSession(agentId);
+  if (!session) {
+    console.error(`No active session for agent "${agentId}". Start the daemon first.`);
+    process.exit(1);
+  }
+
+  const result = await runUserMessage("send", message, agentId);
   console.log(result.stdout);
 
   if (telegramFlag) {
-    const settings = await loadSettings();
     const token = settings.telegram.token;
     const userIds = settings.telegram.allowedUserIds;
 
