@@ -30,14 +30,39 @@ async function callSlackApi<T>(method: string, botToken: string, body: Record<st
 
 async function postMessage(botToken: string, channelId: string, text: string, threadTs?: string): Promise<void> {
   const MAX_LEN = 3000;
-  for (let i = 0; i < text.length; i += MAX_LEN) {
+  const converted = mdToSlack(text);
+  for (let i = 0; i < converted.length; i += MAX_LEN) {
     const body: Record<string, unknown> = {
       channel: channelId,
-      text: text.slice(i, i + MAX_LEN),
+      text: converted.slice(i, i + MAX_LEN),
     };
     if (threadTs) body.thread_ts = threadTs;
     await callSlackApi("chat.postMessage", botToken, body);
   }
+}
+
+// --- Markdown → Slack mrkdwn conversion ---
+
+function mdToSlack(text: string): string {
+  return text
+    // Code blocks first (preserve contents)
+    .replace(/```(\w*)\n?([\s\S]*?)```/g, (_, _lang, code) => `\`\`\`\n${code.trim()}\n\`\`\``)
+    // Headers → bold
+    .replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
+    // Bold **text** or __text__ → *text*
+    .replace(/\*\*(.+?)\*\*/g, "*$1*")
+    .replace(/__(.+?)__/g, "*$1*")
+    // Italic *text* → _text_ (only single asterisk, not already converted bold)
+    .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "_$1_")
+    // Links [text](url) → <url|text>
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<$2|$1>")
+    // Bullet points
+    .replace(/^[\-\*]\s+/gm, "• ")
+    // Horizontal rules
+    .replace(/^---+$/gm, "")
+    // Trim excess blank lines
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 // --- Agent routing ---
