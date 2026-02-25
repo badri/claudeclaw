@@ -45,7 +45,7 @@ export function nextCronMatch(expr: string, after: Date, timezoneOffsetMinutes =
   const d = new Date(after);
   d.setSeconds(0, 0);
   d.setMinutes(d.getMinutes() + 1);
-  for (let i = 0; i < 2880; i++) {
+  for (let i = 0; i < 10080; i++) {
     if (cronMatches(expr, d, timezoneOffsetMinutes)) return d;
     d.setMinutes(d.getMinutes() + 1);
   }
