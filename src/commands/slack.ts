@@ -41,6 +41,24 @@ async function postMessage(botToken: string, channelId: string, text: string, th
   }
 }
 
+async function postThinking(botToken: string, channelId: string, threadTs?: string): Promise<string | null> {
+  const body: Record<string, unknown> = { channel: channelId, text: "⏳ thinking..." };
+  if (threadTs) body.thread_ts = threadTs;
+  const res = await callSlackApi<{ ts?: string }>("chat.postMessage", botToken, body);
+  return res.ts ?? null;
+}
+
+async function updateMessage(botToken: string, channelId: string, ts: string, text: string): Promise<void> {
+  const MAX_LEN = 3000;
+  const converted = mdToSlack(text);
+  // Update the placeholder with the first chunk
+  await callSlackApi("chat.update", botToken, { channel: channelId, ts, text: converted.slice(0, MAX_LEN) });
+  // Post remaining chunks as follow-up messages
+  for (let i = MAX_LEN; i < converted.length; i += MAX_LEN) {
+    await callSlackApi("chat.postMessage", botToken, { channel: channelId, text: converted.slice(i, i + MAX_LEN), thread_ts: ts });
+  }
+}
+
 // --- Markdown → Slack mrkdwn conversion ---
 
 function mdToSlack(text: string): string {
@@ -196,17 +214,27 @@ async function handleMessage(event: SlackMessageEvent): Promise<void> {
 
   const prefixedPrompt = promptParts.join("\n");
 
+  const thinkingTs = await postThinking(config.botToken, channelId, event.thread_ts).catch(() => null);
+
   try {
     const result = await runUserMessage("slack", prefixedPrompt, agentId);
-    if (result.exitCode !== 0) {
-      await postMessage(config.botToken, channelId, `Error (exit ${result.exitCode}): ${result.stderr || "Unknown error"}`, event.thread_ts);
+    const reply = result.exitCode !== 0
+      ? `Error (exit ${result.exitCode}): ${result.stderr || "Unknown error"}`
+      : result.stdout || "(empty response)";
+    if (thinkingTs) {
+      await updateMessage(config.botToken, channelId, thinkingTs, reply);
     } else {
-      await postMessage(config.botToken, channelId, result.stdout || "(empty response)", event.thread_ts);
+      await postMessage(config.botToken, channelId, reply, event.thread_ts);
     }
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error(`[Slack] Error for ${username}: ${errMsg}`);
-    await postMessage(config.botToken, channelId, `Error: ${errMsg}`, event.thread_ts);
+    const errReply = `Error: ${errMsg}`;
+    if (thinkingTs) {
+      await updateMessage(config.botToken, channelId, thinkingTs, errReply);
+    } else {
+      await postMessage(config.botToken, channelId, errReply, event.thread_ts);
+    }
   }
 }
 
