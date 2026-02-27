@@ -319,11 +319,23 @@ async function connectSocketMode(): Promise<void> {
 
     ws.onerror = (err) => {
       console.error(`[Slack] WebSocket error: ${err}`);
+      ws.close();
     };
 
     ws.onclose = () => {
+      clearInterval(pingInterval);
       resolve();
     };
+
+    // Keepalive ping every 30s to detect silent connection drops
+    const pingInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.ping?.();
+      } else {
+        clearInterval(pingInterval);
+        resolve();
+      }
+    }, 30_000);
   });
 }
 
