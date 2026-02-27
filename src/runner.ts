@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile, copyFile } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
-import { getSession, createSession } from "./sessions";
+import { getSession, createSession, resetSession } from "./sessions";
 import { getSettings, type Settings, type ModelConfig, type SecurityConfig, type BrowserConfig } from "./config";
 import { buildClockPromptPrefix } from "./timezone";
 import { LOGS_DIR, MEMORY_MCP_CONFIG, BROWSER_MCP_CONFIG, AGENT_BRIDGE_MCP_CONFIG, getAgentPaths, type AgentPaths } from "./paths";
@@ -397,7 +397,7 @@ async function execClaude(name: string, prompt: string, ctx: AgentContext): Prom
   await mkdir(LOGS_DIR, { recursive: true });
 
   const existing = await getSession(ctx.agentId);
-  const isNew = !existing;
+  let isNew = !existing;
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const logFile = join(LOGS_DIR, `${name}-${timestamp}.log`);
 
@@ -492,6 +492,21 @@ async function execClaude(name: string, prompt: string, ctx: AgentContext): Prom
     );
     exec = await runClaudeOnce(args, fallbackConfig.model, fallbackConfig.api, baseEnv);
     usedFallback = true;
+  }
+
+  // Auto-reset on "Prompt is too long" — session context hit the limit
+  if (!isNew && exec.exitCode !== 0 && (exec.rawStdout + exec.stderr).includes("Prompt is too long")) {
+    console.warn(
+      `[${new Date().toLocaleTimeString()}] Session context limit hit for ${ctx.agentId} — auto-resetting and retrying fresh...`
+    );
+    await resetSession(ctx.agentId);
+    const freshArgs = [...args];
+    const resumeIdx = freshArgs.indexOf("--resume");
+    if (resumeIdx !== -1) freshArgs.splice(resumeIdx, 2);
+    const fmtIdx = freshArgs.indexOf("--output-format");
+    if (fmtIdx !== -1) freshArgs[fmtIdx + 1] = "json";
+    exec = await runClaudeOnce(freshArgs, primaryConfig.model, primaryConfig.api, baseEnv);
+    isNew = true;
   }
 
   const rawStdout = exec.rawStdout;
