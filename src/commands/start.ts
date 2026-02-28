@@ -210,6 +210,7 @@ export async function start(args: string[] = []) {
   let debugFlag = false;
   let webFlag = false;
   let replaceExistingFlag = false;
+  let detachFlag = false;
   let webPortFlag: number | null = null;
   let agentIdFlag: string | undefined;
   const payloadParts: string[] = [];
@@ -228,6 +229,8 @@ export async function start(args: string[] = []) {
       webFlag = true;
     } else if (arg === "--replace-existing") {
       replaceExistingFlag = true;
+    } else if (arg === "--detach") {
+      detachFlag = true;
     } else if (arg === "--agent") {
       const raw = args[i + 1];
       if (!raw || raw.startsWith("--")) {
@@ -269,6 +272,26 @@ export async function start(args: string[] = []) {
   if (hasPromptFlag && !hasTriggerFlag && (webFlag || webPortFlag !== null)) {
     console.error("`--web` is daemon-only. Remove `--prompt`, or add `--trigger`.");
     process.exit(1);
+  }
+  if (detachFlag && hasPromptFlag && !hasTriggerFlag) {
+    console.error("`--detach` cannot be used with one-shot `--prompt` mode.");
+    process.exit(1);
+  }
+
+  // Detach: spawn daemon as background process and exit.
+  if (detachFlag) {
+    const logFile = join(homedir(), ".claudeclaw", "daemon.log");
+    const forwardArgs = args.filter((a) => a !== "--detach");
+    const proc = Bun.spawn([process.execPath, process.argv[1], "start", ...forwardArgs], {
+      stdin: "ignore",
+      stdout: Bun.file(logFile),
+      stderr: Bun.file(logFile),
+      detached: true,
+    });
+    proc.unref();
+    console.log(`Daemon started in background (PID ${proc.pid})`);
+    console.log(`Logs: ${logFile}`);
+    process.exit(0);
   }
 
   // One-shot mode: explicit prompt without trigger.
