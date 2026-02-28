@@ -111,6 +111,18 @@ const DIR_SCOPE_PROMPT = [
   "If a request requires accessing files outside the project, refuse and explain why.",
 ].join("\n");
 
+const MEMORY_FLUSH_PROMPT =
+  "Pre-reset memory flush. " +
+  "The session context is full and is about to be reset. " +
+  "Write key context, decisions, and task state to memory/YYYY-MM-DD.md now (create the memory/ dir if needed). " +
+  "Focus on: what you were working on, what decisions were made, what's next. " +
+  "If there's nothing worth saving, just reply OK.";
+
+const MEMORY_FLUSH_SYSTEM_PROMPT =
+  "This is a pre-reset memory flush turn. " +
+  "The session context window is exhausted. Capture durable memories to disk before the session resets. " +
+  "Write to memory/YYYY-MM-DD.md. Keep it concise and factual.";
+
 export async function ensureProjectClaudeMd(): Promise<void> {
   // Preflight-only initialization: never rewrite an existing project CLAUDE.md.
   if (existsSync(PROJECT_CLAUDE_MD)) return;
@@ -393,6 +405,40 @@ export async function loadHeartbeatPromptTemplate(): Promise<string> {
   }
 }
 
+/**
+ * Run a one-shot memory flush using the current session before it gets reset.
+ * Best-effort: errors are swallowed so the reset always proceeds.
+ */
+async function runMemoryFlush(sessionId: string, args: string[], model: string, api: string, baseEnv: Record<string, string>): Promise<void> {
+  try {
+    // Build flush args: resume existing session, text output, inject flush system prompt
+    const flushArgs = [...args];
+
+    // Replace prompt (-p) with the flush prompt
+    const promptIdx = flushArgs.indexOf("-p");
+    if (promptIdx !== -1) flushArgs[promptIdx + 1] = MEMORY_FLUSH_PROMPT;
+
+    // Ensure --output-format text (already set for resume sessions, but be explicit)
+    const fmtIdx = flushArgs.indexOf("--output-format");
+    if (fmtIdx !== -1) flushArgs[fmtIdx + 1] = "text";
+
+    // Replace --append-system-prompt with the flush-specific one
+    const sysIdx = flushArgs.indexOf("--append-system-prompt");
+    if (sysIdx !== -1) flushArgs[sysIdx + 1] = MEMORY_FLUSH_SYSTEM_PROMPT;
+
+    // Ensure we're resuming the current session
+    if (!flushArgs.includes("--resume")) {
+      flushArgs.push("--resume", sessionId);
+    }
+
+    console.log(`[${new Date().toLocaleTimeString()}] Running pre-reset memory flush for session ${sessionId.slice(0, 8)}...`);
+    await runClaudeOnce(flushArgs, model, api, baseEnv);
+    console.log(`[${new Date().toLocaleTimeString()}] Memory flush complete.`);
+  } catch (e) {
+    console.warn(`[${new Date().toLocaleTimeString()}] Memory flush failed (non-fatal):`, e);
+  }
+}
+
 async function execClaude(name: string, prompt: string, ctx: AgentContext): Promise<RunResult> {
   await mkdir(LOGS_DIR, { recursive: true });
 
@@ -497,8 +543,10 @@ async function execClaude(name: string, prompt: string, ctx: AgentContext): Prom
   // Auto-reset on "Prompt is too long" — session context hit the limit
   if (!isNew && exec.exitCode !== 0 && (exec.rawStdout + exec.stderr).includes("Prompt is too long")) {
     console.warn(
-      `[${new Date().toLocaleTimeString()}] Session context limit hit for ${ctx.agentId} — auto-resetting and retrying fresh...`
+      `[${new Date().toLocaleTimeString()}] Session context limit hit for ${ctx.agentId} — flushing memory then resetting...`
     );
+    // Pre-reset memory flush: give the agent a chance to persist key context before wiping
+    await runMemoryFlush(existing!.sessionId, args, primaryConfig.model, primaryConfig.api, baseEnv);
     await resetSession(ctx.agentId);
     const freshArgs = [...args];
     const resumeIdx = freshArgs.indexOf("--resume");
