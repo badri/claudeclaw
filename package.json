@@ -2,6 +2,9 @@
   "name": "claudeclaw",
   "version": "1.0.0",
   "type": "module",
+  "bin": {
+    "claudeclaw": "bin/claudeclaw"
+  },
   "scripts": {
     "start": "bun run src/index.ts",
     "dev:web": "bun --watch src/index.ts start --web --replace-existing",
