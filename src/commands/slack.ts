@@ -263,12 +263,21 @@ async function connectSocketMode(): Promise<void> {
   const url = await getSocketModeUrl(config.appToken);
   const ws = new WebSocket(url);
 
-  return new Promise<void>((resolve, reject) => {
+  // Slack Socket Mode sends periodic `hello` frames. Track the last received
+  // message time; if silent for >2 min the connection is zombie — force close
+  // so the reconnect loop fires.
+  const DEADLINE_CHECK_MS = 30_000;
+  const SILENCE_LIMIT_MS = 2 * 60_000;
+  let lastMessageAt = Date.now();
+
+  return new Promise<void>((resolve) => {
     ws.onopen = () => {
       console.log("[Slack] Socket Mode connected");
     };
 
     ws.onmessage = (event) => {
+      lastMessageAt = Date.now();
+
       let envelope: SlackEnvelope;
       try {
         envelope = JSON.parse(event.data as string) as SlackEnvelope;
@@ -323,36 +332,21 @@ async function connectSocketMode(): Promise<void> {
     };
 
     ws.onclose = () => {
-      clearInterval(pingInterval);
-      if (pongTimer) clearTimeout(pongTimer);
+      clearInterval(deadlineInterval);
       resolve();
     };
 
-    // Keepalive ping every 30s with pong timeout to detect zombie connections.
-    // If a pong doesn't arrive within 10s of the ping, force-close the socket.
-    const PING_INTERVAL_MS = 30_000;
-    const PONG_TIMEOUT_MS = 10_000;
-    let pongTimer: ReturnType<typeof setTimeout> | null = null;
-
-    ws.onpong = () => {
-      if (pongTimer) {
-        clearTimeout(pongTimer);
-        pongTimer = null;
-      }
-    };
-
-    const pingInterval = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.ping?.();
-        pongTimer = setTimeout(() => {
-          console.warn("[Slack] Pong timeout — zombie connection detected, forcing close");
-          ws.close();
-        }, PONG_TIMEOUT_MS);
-      } else {
-        clearInterval(pingInterval);
+    const deadlineInterval = setInterval(() => {
+      if (ws.readyState !== WebSocket.OPEN) {
+        clearInterval(deadlineInterval);
         resolve();
+        return;
       }
-    }, PING_INTERVAL_MS);
+      if (Date.now() - lastMessageAt > SILENCE_LIMIT_MS) {
+        console.warn("[Slack] No message in 2 minutes — zombie connection, forcing close");
+        ws.close();
+      }
+    }, DEADLINE_CHECK_MS);
   });
 }
 
