@@ -324,18 +324,35 @@ async function connectSocketMode(): Promise<void> {
 
     ws.onclose = () => {
       clearInterval(pingInterval);
+      if (pongTimer) clearTimeout(pongTimer);
       resolve();
     };
 
-    // Keepalive ping every 30s to detect silent connection drops
+    // Keepalive ping every 30s with pong timeout to detect zombie connections.
+    // If a pong doesn't arrive within 10s of the ping, force-close the socket.
+    const PING_INTERVAL_MS = 30_000;
+    const PONG_TIMEOUT_MS = 10_000;
+    let pongTimer: ReturnType<typeof setTimeout> | null = null;
+
+    ws.onpong = () => {
+      if (pongTimer) {
+        clearTimeout(pongTimer);
+        pongTimer = null;
+      }
+    };
+
     const pingInterval = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.ping?.();
+        pongTimer = setTimeout(() => {
+          console.warn("[Slack] Pong timeout — zombie connection detected, forcing close");
+          ws.close();
+        }, PONG_TIMEOUT_MS);
       } else {
         clearInterval(pingInterval);
         resolve();
       }
-    }, 30_000);
+    }, PING_INTERVAL_MS);
   });
 }
 
