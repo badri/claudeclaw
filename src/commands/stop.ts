@@ -11,7 +11,13 @@ const CLAUDE_SETTINGS_FILE = join(CLAUDE_DIR, "settings.json");
 async function teardownStatusline() {
   try {
     const settings = await Bun.file(CLAUDE_SETTINGS_FILE).json();
-    delete settings.statusLine;
+    // Restore the user's original statusLine if we saved one
+    if (settings.statusLinePrev !== undefined) {
+      settings.statusLine = settings.statusLinePrev;
+      delete settings.statusLinePrev;
+    } else {
+      delete settings.statusLine;
+    }
     await writeFile(CLAUDE_SETTINGS_FILE, JSON.stringify(settings, null, 2) + "\n");
   } catch {
     // file doesn't exist, nothing to clean up

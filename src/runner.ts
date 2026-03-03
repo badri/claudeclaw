@@ -311,7 +311,7 @@ export async function writeBrowserMcpConfig(): Promise<void> {
     mcpServers: {
       "claudeclaw-browser": {
         command: playwrightMcp,
-        args: [],
+        args: ["--headless"],
       },
     },
   };

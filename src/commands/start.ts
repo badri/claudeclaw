@@ -31,82 +31,56 @@ const PREFLIGHT_SCRIPT = fileURLToPath(new URL("../preflight.ts", import.meta.ur
 // --- Statusline setup/teardown ---
 
 const STATUSLINE_SCRIPT = `#!/usr/bin/env node
-const { readFileSync } = require("fs");
-const { join } = require("path");
+const { execSync } = require("child_process");
 const { homedir } = require("os");
-
-const DIR = join(homedir(), ".claudeclaw");
-const STATE_FILE = join(DIR, "state.json");
-const PID_FILE = join(DIR, "daemon.pid");
 
 const R = "\\x1b[0m";
 const DIM = "\\x1b[2m";
-const RED = "\\x1b[31m";
 const GREEN = "\\x1b[32m";
+const YELLOW = "\\x1b[33m";
+const RED = "\\x1b[31m";
+const CYAN = "\\x1b[36m";
+const MAGENTA = "\\x1b[35m";
+const SEP = DIM + " \\u2502 " + R;
 
-function fmt(ms) {
-  if (ms <= 0) return GREEN + "now!" + R;
-  var s = Math.floor(ms / 1000);
-  var h = Math.floor(s / 3600);
-  var m = Math.floor((s % 3600) / 60);
-  if (h > 0) return h + "h " + m + "m";
-  if (m > 0) return m + "m";
-  return (s % 60) + "s";
-}
+let raw = "";
+process.stdin.on("data", d => raw += d);
+process.stdin.on("end", () => {
+  let data = {};
+  try { data = JSON.parse(raw); } catch {}
 
-function alive() {
+  const home = homedir();
+  const cwd = (data.workspace && data.workspace.cwd) || process.env.CLAUDE_CWD || process.cwd();
+
+  // Shorten path: replace home with ~, keep last 2 segments
+  let pwd = cwd.startsWith(home) ? "~" + cwd.slice(home.length) : cwd;
+  const segs = pwd.replace(/^~\\//, "").split("/").filter(Boolean);
+  if (segs.length > 2) {
+    pwd = (cwd.startsWith(home) ? "~/" : "/") + segs.slice(-2).join("/");
+  }
+
+  // Git branch
+  let branch = "";
   try {
-    var pid = readFileSync(PID_FILE, "utf-8").trim();
-    process.kill(Number(pid), 0);
-    return true;
-  } catch { return false; }
-}
+    branch = execSync("git -C " + JSON.stringify(cwd) + " branch --show-current 2>/dev/null",
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {}
 
-var B = DIM + "\\u2502" + R;
-var TL = DIM + "\\u256d" + R;
-var TR = DIM + "\\u256e" + R;
-var BL = DIM + "\\u2570" + R;
-var BR = DIM + "\\u256f" + R;
-var H = DIM + "\\u2500" + R;
-var HEADER = TL + H.repeat(6) + " \\ud83e\\udd9e ClaudeClaw \\ud83e\\udd9e " + H.repeat(6) + TR;
-var FOOTER = BL + H.repeat(30) + BR;
+  // Context remaining (0-100, null if unknown)
+  const remaining = data.context_window ? data.context_window.remaining_percentage : null;
 
-if (!alive()) {
-  process.stdout.write(
-    HEADER + "\\n" +
-    B + "        " + RED + "\\u25cb offline" + R + "              " + B + "\\n" +
-    FOOTER
-  );
-  process.exit(0);
-}
+  const parts = [CYAN + pwd + R];
 
-try {
-  var state = JSON.parse(readFileSync(STATE_FILE, "utf-8"));
-  var now = Date.now();
-  var info = [];
+  if (branch) parts.push(MAGENTA + "\\u2387 " + branch + R);
 
-  if (state.heartbeat) {
-    info.push("\\ud83d\\udc93 " + fmt(state.heartbeat.nextAt - now));
+  if (remaining !== null) {
+    const pct = Math.round(remaining);
+    const color = pct > 50 ? GREEN : pct > 20 ? YELLOW : RED;
+    parts.push(color + pct + "% ctx" + R);
   }
 
-  var jc = (state.jobs || []).length;
-  info.push("\\ud83d\\udccb " + jc + " job" + (jc !== 1 ? "s" : ""));
-  info.push(GREEN + "\\u25cf live" + R);
-
-  if (state.telegram) {
-    info.push(GREEN + "\\ud83d\\udce1" + R);
-  }
-
-  var mid = " " + info.join(" " + B + " ") + " ";
-
-  process.stdout.write(HEADER + "\\n" + B + mid + B + "\\n" + FOOTER);
-} catch {
-  process.stdout.write(
-    HEADER + "\\n" +
-    B + DIM + "         waiting...         " + R + B + "\\n" +
-    FOOTER
-  );
-}
+  process.stdout.write(parts.join(SEP));
+});
 `;
 
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
@@ -178,6 +152,10 @@ async function setupStatusline() {
   } catch {
     // file doesn't exist or isn't valid JSON
   }
+  // Save the user's existing statusLine so we can restore it on stop
+  if (settings.statusLine !== undefined && !settings.statusLinePrev) {
+    settings.statusLinePrev = settings.statusLine;
+  }
   settings.statusLine = {
     type: "command",
     command: `node ${join(homedir(), ".claude", "statusline.cjs")}`,
@@ -188,7 +166,13 @@ async function setupStatusline() {
 async function teardownStatusline() {
   try {
     const settings = await Bun.file(CLAUDE_SETTINGS_FILE).json();
-    delete settings.statusLine;
+    // Restore the user's original statusLine if we saved one
+    if (settings.statusLinePrev !== undefined) {
+      settings.statusLine = settings.statusLinePrev;
+      delete settings.statusLinePrev;
+    } else {
+      delete settings.statusLine;
+    }
     await writeFile(CLAUDE_SETTINGS_FILE, JSON.stringify(settings, null, 2) + "\n");
   } catch {
     // file doesn't exist, nothing to clean up
@@ -350,6 +334,7 @@ export async function start(args: string[] = []) {
   const settings = await loadSettings();
   const agentId = resolveAndValidateAgent(agentIdFlag, settings);
   await ensureProjectClaudeMd();
+  await setupStatusline();
   await writeMemoryMcpConfig();
   if (settings.browser.enabled) await writeBrowserMcpConfig();
   await initAgentWorkspaces(settings);
@@ -551,6 +536,21 @@ export async function start(args: string[] = []) {
     }
   }
 
+  function forwardToSlack(agentId: string, label: string, result: { exitCode: number; stdout: string; stderr: string }) {
+    const { botToken, routes } = currentSettings.slack;
+    if (!botToken) return;
+    const route = routes.find((r) => r.agentId === agentId);
+    if (!route) return;
+    const text = result.exitCode === 0
+      ? `${label ? `*[${label}]*\n` : ""}${result.stdout || "(empty)"}`
+      : `${label ? `*[${label}]* ` : ""}error (exit ${result.exitCode}): ${result.stderr || "Unknown"}`;
+    import("./slack").then(({ sendSlackMessage }) =>
+      sendSlackMessage(botToken, route.channelId, text).catch((err) =>
+        console.error(`[Slack] Failed to forward cron output for agent ${agentId}: ${err}`)
+      )
+    );
+  }
+
   // --- Heartbeat scheduling ---
   function scheduleHeartbeat() {
     if (heartbeatTimer) clearTimeout(heartbeatTimer);
@@ -725,6 +725,7 @@ export async function start(args: string[] = []) {
             if (job.notify === false) return;
             if (job.notify === "error" && r.exitCode === 0) return;
             forwardToTelegram(job.name, r);
+            forwardToSlack(job.agentId, job.name, r);
           })
           .finally(async () => {
             if (job.recurring) return;
