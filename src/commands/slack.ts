@@ -263,11 +263,10 @@ async function connectSocketMode(): Promise<void> {
   const url = await getSocketModeUrl(config.appToken);
   const ws = new WebSocket(url);
 
-  // Slack Socket Mode sends periodic `hello` frames. Track the last received
-  // message time; if silent for >2 min the connection is zombie — force close
-  // so the reconnect loop fires.
-  const DEADLINE_CHECK_MS = 30_000;
-  const SILENCE_LIMIT_MS = 2 * 60_000;
+  // Track the last received message time; if silent for >10 min the
+  // connection is likely zombie — force close so the reconnect loop fires.
+  const DEADLINE_CHECK_MS = 60_000;
+  const SILENCE_LIMIT_MS = 10 * 60_000;
   let lastMessageAt = Date.now();
 
   return new Promise<void>((resolve) => {
@@ -343,7 +342,7 @@ async function connectSocketMode(): Promise<void> {
         return;
       }
       if (Date.now() - lastMessageAt > SILENCE_LIMIT_MS) {
-        console.warn("[Slack] No message in 2 minutes — zombie connection, forcing close");
+        console.warn("[Slack] No message in 10 minutes — zombie connection, forcing close");
         ws.close();
       }
     }, DEADLINE_CHECK_MS);
@@ -355,16 +354,22 @@ async function loop(): Promise<void> {
   const config = getSettings().slack;
   console.log(`  Allowed channels: ${config.allowedChannelIds.length === 0 ? "all" : config.allowedChannelIds.join(", ")}`);
 
+  let backoffMs = 5_000;
+  const MAX_BACKOFF_MS = 5 * 60_000; // Cap at 5 minutes
+
   while (running) {
     try {
       await connectSocketMode();
+      // Successful connection resets backoff
+      backoffMs = 5_000;
     } catch (err) {
       if (!running) break;
       console.error(`[Slack] Connection error: ${err instanceof Error ? err.message : err}`);
     }
     if (!running) break;
-    console.log("[Slack] Reconnecting in 5s...");
-    await Bun.sleep(5000);
+    console.log(`[Slack] Reconnecting in ${Math.round(backoffMs / 1000)}s...`);
+    await Bun.sleep(backoffMs);
+    backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
   }
 }
 
