@@ -304,14 +304,34 @@ export async function writeMemoryMcpConfig(configPath = MEMORY_MCP_CONFIG): Prom
  * Write the MCP config file that registers the @playwright/mcp browser server.
  * Called once at startup when settings.browser.enabled is true.
  */
-export async function writeBrowserMcpConfig(): Promise<void> {
-  // Resolve playwright-mcp binary from this package's node_modules
+export async function writeBrowserMcpConfig(browser?: BrowserConfig): Promise<void> {
   const playwrightMcp = join(import.meta.dir, "..", "node_modules", ".bin", "playwright-mcp");
+  const { CLAUDECLAW_DIR } = await import("./paths");
+  const userDataDir = join(CLAUDECLAW_DIR, "browser-data");
+
+  const args = ["--headless"];
+
+  // Persistent browser profile for cookie/login persistence across invocations
+  args.push("--user-data-dir", userDataDir);
+
+  // On Linux VMs without a display server, disable sandbox
+  if (process.platform === "linux") {
+    args.push("--no-sandbox");
+  }
+
+  // LightPanda alternative (when configured)
+  if (browser?.engine === "lightpanda") {
+    args.push("--browser", "chromium");
+    // LightPanda uses a custom executable path
+    const lpPath = process.env.LIGHTPANDA_PATH || "/usr/local/bin/lightpanda";
+    args.push("--executable-path", lpPath);
+  }
+
   const config = {
     mcpServers: {
       "claudeclaw-browser": {
         command: playwrightMcp,
-        args: ["--headless"],
+        args,
       },
     },
   };
@@ -663,7 +683,7 @@ export async function initAgentWorkspaces(settings: Settings): Promise<void> {
     }
 
     await writeMemoryMcpConfig(paths.memoryMcpConfig);
-    if (settings.browser.enabled) await writeBrowserMcpConfig();
+    if (settings.browser.enabled) await writeBrowserMcpConfig(settings.browser);
   }
 }
 

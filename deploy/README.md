@@ -39,6 +39,7 @@ curl http://localhost:9100/
 |----------|---------|-------------|
 | `CLAUDECLAW_HOME` | `~/.claudeclaw` | Root data directory |
 | `CLAUDECLAW_HEALTH_PORT` | `9100` | Health endpoint port (when web UI is off) |
+| `LIGHTPANDA_PATH` | `/usr/local/bin/lightpanda` | LightPanda binary path (when engine is `lightpanda`) |
 
 ## Health Endpoint
 
@@ -77,6 +78,58 @@ Claude Code requires an interactive browser login to create a session token. Thi
 - When expired, the daemon will fail to run prompts and log auth errors
 - Re-authenticate manually: `sudo -u claudeclaw CLAUDECLAW_HOME=/opt/claudeclaw/data claude --auth`
 - Monitor via health endpoint — if `last_job_run_at` stops updating, auth may have expired
+
+## Headless Browser
+
+Playwright runs headless by default. On Linux VMs, `--no-sandbox` is added automatically.
+
+### Install browser deps
+
+```bash
+# Chromium + system dependencies (recommended)
+sudo -u claudeclaw npx playwright install chromium --with-deps
+
+# Or install system chromium
+sudo apt-get install chromium-browser libatk1.0-0 libcups2 libxcomposite1 libxrandr2
+```
+
+### Persistent sessions
+
+Browser profile persists at `$CLAUDECLAW_HOME/browser-data/`. Cookies, logins, and local storage survive daemon restarts — no need to re-authenticate sites like Medium or Substack between sessions.
+
+### Anti-headless detection
+
+Some sites detect headless browsers. Use xvfb as a fallback:
+
+```bash
+# Install xvfb
+sudo apt-get install xvfb
+
+# Run claudeclaw with virtual display
+xvfb-run claudeclaw start
+```
+
+Or in the systemd unit:
+```ini
+ExecStart=/usr/bin/xvfb-run /usr/local/bin/bun run /opt/claudeclaw/src/index.ts start --trigger
+```
+
+### LightPanda (lightweight alternative)
+
+For resource-constrained VMs, set `engine: "lightpanda"` in settings.json:
+
+```json
+"browser": {
+  "enabled": true,
+  "engine": "lightpanda"
+}
+```
+
+Set `LIGHTPANDA_PATH` env var if the binary isn't at `/usr/local/bin/lightpanda`.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LIGHTPANDA_PATH` | `/usr/local/bin/lightpanda` | Path to LightPanda binary |
 
 ## PID File
 

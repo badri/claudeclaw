@@ -293,7 +293,7 @@ export async function start(args: string[] = []) {
     const agentId = resolveAndValidateAgent(agentIdFlag, settings);
     await ensureProjectClaudeMd();
     await writeMemoryMcpConfig();
-    if (settings.browser.enabled) await writeBrowserMcpConfig();
+    if (settings.browser.enabled) await writeBrowserMcpConfig(settings.browser);
     await writeAgentBridgeMcpConfig();
     await initAgentWorkspaces(settings);
     await bootstrap(agentId);
@@ -337,7 +337,7 @@ export async function start(args: string[] = []) {
   await ensureProjectClaudeMd();
   await setupStatusline();
   await writeMemoryMcpConfig();
-  if (settings.browser.enabled) await writeBrowserMcpConfig();
+  if (settings.browser.enabled) await writeBrowserMcpConfig(settings.browser);
   await initAgentWorkspaces(settings);
   async function loadAllJobs(s: Settings): Promise<Job[]> {
     const agentList = s.agents?.list ?? [];
