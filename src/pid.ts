@@ -1,6 +1,8 @@
 import { writeFile, unlink, readFile } from "fs/promises";
 import { PID_FILE } from "./paths";
 
+const UNDER_SYSTEMD = !!process.env.INVOCATION_ID;
+
 export function getPidPath(): string {
   return PID_FILE;
 }
@@ -35,10 +37,12 @@ export async function checkExistingDaemon(): Promise<number | null> {
 }
 
 export async function writePidFile(): Promise<void> {
+  if (UNDER_SYSTEMD) return;
   await writeFile(PID_FILE, String(process.pid) + "\n");
 }
 
 export async function cleanupPidFile(): Promise<void> {
+  if (UNDER_SYSTEMD) return;
   try {
     await unlink(PID_FILE);
   } catch {

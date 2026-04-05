@@ -1,0 +1,36 @@
+[Unit]
+Description=ClaudeClaw AI Agent Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=claudeclaw
+Group=claudeclaw
+WorkingDirectory=/opt/claudeclaw
+
+# Core binary — adjust path if installed elsewhere
+ExecStart=/usr/local/bin/bun run /opt/claudeclaw/src/index.ts start --trigger
+
+# Environment
+Environment=CLAUDECLAW_HOME=/opt/claudeclaw/data
+Environment=CLAUDECLAW_HEALTH_PORT=9100
+Environment=NODE_ENV=production
+
+# Do NOT use --detach; systemd manages the process lifecycle.
+# Stdout/stderr go to journald automatically.
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/claudeclaw/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

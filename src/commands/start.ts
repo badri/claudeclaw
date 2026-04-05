@@ -264,7 +264,8 @@ export async function start(args: string[] = []) {
 
   // Detach: spawn daemon as background process and exit.
   if (detachFlag) {
-    const logFile = join(homedir(), ".claudeclaw", "daemon.log");
+    const { CLAUDECLAW_DIR } = await import("../paths");
+    const logFile = join(CLAUDECLAW_DIR, "daemon.log");
     const forwardArgs = args.filter((a) => a !== "--detach");
     const proc = Bun.spawn([process.execPath, process.argv[1], "start", ...forwardArgs], {
       stdin: "ignore",
@@ -384,6 +385,9 @@ export async function start(args: string[] = []) {
   let nextHeartbeatAt = 0;
   let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
   const daemonStartedAt = Date.now();
+  let lastHeartbeatAt = 0;
+  let lastJobRunAt = 0;
+  let lastJobRunName = "";
 
   // --- Telegram ---
   let telegramSend: ((chatId: number, text: string) => Promise<void>) | null = null;
@@ -444,6 +448,9 @@ export async function start(args: string[] = []) {
             pid: process.pid,
             startedAt: daemonStartedAt,
             heartbeatNextAt: nextHeartbeatAt,
+            lastHeartbeatAt,
+            lastJobRunAt,
+            lastJobRunName,
             settings: currentSettings,
             jobs: currentJobs,
           }),
@@ -505,6 +512,39 @@ export async function start(args: string[] = []) {
     web = startWebWithFallback(currentSettings.web.host, webPort);
     currentSettings.web.port = web.port;
     console.log(`[${new Date().toLocaleTimeString()}] Web UI listening on http://${web.host}:${web.port}`);
+  }
+
+  // Standalone /health endpoint — always on, even without --web.
+  // Skipped if the web UI is already serving (it includes /api/health).
+  const healthPort = Number(process.env.CLAUDECLAW_HEALTH_PORT) || 9100;
+  if (!webEnabled) {
+    try {
+      Bun.serve({
+        hostname: "0.0.0.0",
+        port: healthPort,
+        fetch: (_req) => {
+          const now = Date.now();
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              now,
+              uptime_ms: now - daemonStartedAt,
+              started_at: daemonStartedAt,
+              last_heartbeat_at: lastHeartbeatAt || null,
+              last_job_run_at: lastJobRunAt || null,
+              last_job_run_name: lastJobRunName || null,
+              slack: !!(currentSettings.slack.botToken && currentSettings.slack.appToken),
+              telegram: !!currentSettings.telegram.token,
+              jobs_loaded: currentJobs.length,
+            }),
+            { headers: { "Content-Type": "application/json" } }
+          );
+        },
+      });
+      console.log(`[${new Date().toLocaleTimeString()}] Health endpoint on http://0.0.0.0:${healthPort}/`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleTimeString()}] Health endpoint failed to start:`, err);
+    }
   }
 
   // --- Helpers ---
@@ -595,6 +635,7 @@ export async function start(args: string[] = []) {
           return run("heartbeat", mergedPrompt);
         })
         .then((r) => {
+          lastHeartbeatAt = Date.now();
           if (r) forwardToTelegram("", r);
         });
       nextHeartbeatAt = nextAllowedHeartbeatAt(
@@ -722,6 +763,8 @@ export async function start(args: string[] = []) {
         resolvePrompt(job.prompt)
           .then((prompt) => run(job.name, prompt, job.agentId))
           .then((r) => {
+            lastJobRunAt = Date.now();
+            lastJobRunName = job.name;
             if (job.notify === false) return;
             if (job.notify === "error" && r.exitCode === 0) return;
             forwardToTelegram(job.name, r);

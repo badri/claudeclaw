@@ -20,7 +20,20 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
       }
 
       if (url.pathname === "/api/health") {
-        return json({ ok: true, now: Date.now() });
+        const snap = opts.getSnapshot();
+        const now = Date.now();
+        return json({
+          ok: true,
+          now,
+          uptime_ms: now - snap.startedAt,
+          started_at: snap.startedAt,
+          last_heartbeat_at: snap.lastHeartbeatAt || null,
+          last_job_run_at: snap.lastJobRunAt || null,
+          last_job_run_name: snap.lastJobRunName || null,
+          slack: !!(snap.settings.slack.botToken && snap.settings.slack.appToken),
+          telegram: !!snap.settings.telegram.token,
+          jobs_loaded: snap.jobs.length,
+        });
       }
 
       if (url.pathname === "/api/state") {

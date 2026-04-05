@@ -28,7 +28,7 @@
 import { join } from "path";
 import { homedir } from "os";
 
-export const CLAUDECLAW_DIR = join(homedir(), ".claudeclaw");
+export const CLAUDECLAW_DIR = process.env.CLAUDECLAW_HOME || join(homedir(), ".claudeclaw");
 
 // Top-level files
 export const SETTINGS_FILE = join(CLAUDECLAW_DIR, "settings.json");

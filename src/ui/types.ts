@@ -5,6 +5,9 @@ export interface WebSnapshot {
   pid: number;
   startedAt: number;
   heartbeatNextAt: number;
+  lastHeartbeatAt: number;
+  lastJobRunAt: number;
+  lastJobRunName: string;
   settings: Settings;
   jobs: Job[];
 }
