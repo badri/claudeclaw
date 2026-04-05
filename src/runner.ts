@@ -31,7 +31,14 @@ export interface RunResult {
   exitCode: number;
 }
 
-const RATE_LIMIT_PATTERN = /you(?:'|’)ve hit your limit/i;
+const RATE_LIMIT_PATTERN = /you(?:’|’)ve hit your limit/i;
+const AUTH_EXPIRY_PATTERN = /auth|login required|sign.?in|session.?expired|unauthorized|not.?logged.?in|invalid.?token/i;
+
+/** Callback invoked when Claude CLI auth appears expired. Set from start.ts. */
+let authExpiryHandler: ((message: string) => void) | null = null;
+export function onAuthExpiry(handler: (message: string) => void): void {
+  authExpiryHandler = handler;
+}
 
 // Serial queue — prevents concurrent --resume on the same session
 let queue: Promise<unknown> = Promise.resolve();
@@ -623,6 +630,11 @@ async function execClaude(name: string, prompt: string, ctx: AgentContext): Prom
 
   await Bun.write(logFile, output);
   console.log(`[${new Date().toLocaleTimeString()}] Done: ${name} → ${logFile}`);
+
+  // Detect Claude CLI auth expiry from stderr and alert immediately
+  if (exitCode !== 0 && AUTH_EXPIRY_PATTERN.test(stderr) && authExpiryHandler) {
+    authExpiryHandler(stderr.trim().slice(0, 200));
+  }
 
   // Append a brief journal entry so memory accumulates across sessions
   if (stdout.trim()) {

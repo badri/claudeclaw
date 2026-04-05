@@ -33,6 +33,7 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
           slack: !!(snap.settings.slack.botToken && snap.settings.slack.appToken),
           telegram: !!snap.settings.telegram.token,
           jobs_loaded: snap.jobs.length,
+          service_health: snap.lastHealthProbe,
         });
       }
 

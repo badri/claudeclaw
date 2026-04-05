@@ -1,5 +1,6 @@
 import type { Settings } from "../config";
 import type { Job } from "../jobs";
+import type { HealthProbeReport } from "../health-probe";
 
 export interface WebSnapshot {
   pid: number;
@@ -10,6 +11,7 @@ export interface WebSnapshot {
   lastJobRunName: string;
   settings: Settings;
   jobs: Job[];
+  lastHealthProbe: HealthProbeReport | null;
 }
 
 export interface WebServerHandle {

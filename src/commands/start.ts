@@ -2,7 +2,8 @@ import { writeFile, unlink, mkdir } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
-import { run, runUserMessage, bootstrap, ensureProjectClaudeMd, loadHeartbeatPromptTemplate, writeMemoryMcpConfig, writeBrowserMcpConfig, writeAgentBridgeMcpConfig, initAgentWorkspaces } from "../runner";
+import { run, runUserMessage, bootstrap, ensureProjectClaudeMd, loadHeartbeatPromptTemplate, writeMemoryMcpConfig, writeBrowserMcpConfig, writeAgentBridgeMcpConfig, initAgentWorkspaces, onAuthExpiry } from "../runner";
+import { runHealthProbe, formatProbeAlert, type HealthProbeReport } from "../health-probe";
 import { writeState, type StateData } from "../statusline";
 import { cronMatches, nextCronMatch } from "../cron";
 import { clearJobSchedule, loadJobs } from "../jobs";
@@ -388,6 +389,7 @@ export async function start(args: string[] = []) {
   let lastHeartbeatAt = 0;
   let lastJobRunAt = 0;
   let lastJobRunName = "";
+  let lastHealthProbe: HealthProbeReport | null = null;
 
   // --- Telegram ---
   let telegramSend: ((chatId: number, text: string) => Promise<void>) | null = null;
@@ -453,6 +455,7 @@ export async function start(args: string[] = []) {
             lastJobRunName,
             settings: currentSettings,
             jobs: currentJobs,
+            lastHealthProbe,
           }),
           onHeartbeatEnabledChanged: (enabled) => {
             if (currentSettings.heartbeat.enabled === enabled) return;
@@ -536,6 +539,7 @@ export async function start(args: string[] = []) {
               slack: !!(currentSettings.slack.botToken && currentSettings.slack.appToken),
               telegram: !!currentSettings.telegram.token,
               jobs_loaded: currentJobs.length,
+              service_health: lastHealthProbe,
             }),
             { headers: { "Content-Type": "application/json" } }
           );
@@ -590,6 +594,51 @@ export async function start(args: string[] = []) {
       )
     );
   }
+
+  // --- Health probe ---
+  const HEALTH_PROBE_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+  function alertToAllChannels(text: string) {
+    // Telegram
+    if (telegramSend && currentSettings.telegram.allowedUserIds.length > 0) {
+      for (const userId of currentSettings.telegram.allowedUserIds) {
+        telegramSend(userId, text).catch((err) =>
+          console.error(`[Telegram] Health alert failed: ${err}`)
+        );
+      }
+    }
+    // Slack — send to first configured route's channel
+    const { botToken, routes } = currentSettings.slack;
+    if (botToken && routes.length > 0) {
+      import("./slack").then(({ sendSlackMessage }) =>
+        sendSlackMessage(botToken, routes[0].channelId, text).catch((err) =>
+          console.error(`[Slack] Health alert failed: ${err}`)
+        )
+      );
+    }
+  }
+
+  async function runProbeAndAlert() {
+    try {
+      const report = await runHealthProbe(currentSettings);
+      lastHealthProbe = report;
+      const alert = formatProbeAlert(report);
+      if (alert) {
+        console.warn(`[${ts()}] Health probe failures detected`);
+        alertToAllChannels(alert);
+      } else {
+        console.log(`[${ts()}] Health probe: all services OK`);
+      }
+    } catch (err) {
+      console.error(`[${ts()}] Health probe error:`, err);
+    }
+  }
+
+  // Register auth expiry handler — fires immediately on detection
+  onAuthExpiry((message) => {
+    console.error(`[${ts()}] Claude CLI auth expiry detected: ${message}`);
+    alertToAllChannels(`🚨 *Claude CLI auth expired*\n${message}`);
+  });
 
   // --- Heartbeat scheduling ---
   function scheduleHeartbeat() {
@@ -673,6 +722,10 @@ export async function start(args: string[] = []) {
   startPreflightInBackground(process.cwd());
 
   if (currentSettings.heartbeat.enabled) scheduleHeartbeat();
+
+  // Run health probe on startup (non-blocking) + schedule every 6 hours
+  runProbeAndAlert();
+  setInterval(() => runProbeAndAlert(), HEALTH_PROBE_INTERVAL_MS);
 
   // --- Hot-reload loop (every 30s) ---
   setInterval(async () => {
