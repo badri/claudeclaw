@@ -1,12 +1,12 @@
 # VM Deployment
 
-Run claudeclaw as an always-on systemd service.
+Run claudeclaw as an always-on systemd service with security hardening.
 
 ## Quick Setup
 
 ```bash
-# 1. Create service user
-sudo useradd -r -s /bin/false claudeclaw
+# 1. Harden the VM (firewall, SSH lockdown, fail2ban, unattended updates)
+sudo bash deploy/harden-vm.sh YOUR_IP
 
 # 2. Install claudeclaw to /opt/claudeclaw
 sudo mkdir -p /opt/claudeclaw/data
@@ -33,6 +33,32 @@ journalctl -u claudeclaw -f
 curl http://localhost:9100/
 ```
 
+## Security Hardening
+
+The `harden-vm.sh` script handles:
+
+| Layer | What | Details |
+|-------|------|---------|
+| Firewall (UFW) | Deny all inbound except SSH + health from trusted IP | Outbound HTTPS allowed |
+| SSH | Key-only auth, no root login, MaxAuthTries 3 | Backup at `/etc/ssh/sshd_config.bak` |
+| fail2ban | Ban after 5 failed SSH attempts for 1 hour | |
+| Systemd sandbox | ProtectSystem=strict, PrivateDevices, CapabilityBoundingSet, SystemCallFilter | See `claudeclaw.service` |
+| File permissions | 600 for secrets, 700 for data dir | settings.json, extra-mcp.json, x-cookies.json |
+| Updates | Unattended security updates enabled | Daily check, weekly cleanup |
+| Logs | journald: 500MB max, 30-day retention | Compressed |
+
+### Systemd sandbox details
+
+The service unit restricts the claudeclaw process to:
+- **Read-only** access to `/opt/claudeclaw` (source code)
+- **Read-write** only to `/opt/claudeclaw/data` (runtime state)
+- **No** access to kernel tunables, modules, control groups, clock
+- **No** new privileges, SUID/SGID, or device access
+- **Syscall filter**: only `@system-service` + `@network-io` (blocks mount, reboot, swap, raw-io)
+- **Capabilities**: only `CAP_NET_BIND_SERVICE` (for health port)
+
+To verify sandboxing: `systemd-analyze security claudeclaw`
+
 ## Environment Variables
 
 | Variable | Default | Description |
@@ -56,9 +82,19 @@ Returns:
   "last_job_run_name": "morning-brief",
   "slack": true,
   "telegram": false,
-  "jobs_loaded": 8
+  "jobs_loaded": 8,
+  "service_health": {
+    "ok": true,
+    "checkedAt": 1712303600000,
+    "probes": [
+      { "service": "slack", "ok": true, "message": "badri@workspace", "checkedAt": 1712303600000 },
+      { "service": "claude_cli", "ok": true, "message": "claude 1.0.0", "checkedAt": 1712303600000 }
+    ]
+  }
 }
 ```
+
+Service health probes run on startup + every 6 hours. Failures alert to Slack/Telegram immediately.
 
 ## Logs
 

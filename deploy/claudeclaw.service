@@ -26,11 +26,40 @@ RestartSec=10
 StartLimitIntervalSec=300
 StartLimitBurst=5
 
-# Security hardening
+# Security hardening — defense in depth
 NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/opt/claudeclaw/data
 PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+SystemCallArchitectures=native
+SystemCallFilter=@system-service @network-io
+SystemCallFilter=~@mount @reboot @swap @clock @cpu-emulation @debug @module @raw-io
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=
+RemoveIPC=true
+
+# File access
+ReadOnlyPaths=/opt/claudeclaw
+ReadWritePaths=/opt/claudeclaw/data
+TemporaryFileSystem=/tmp:rw
+
+# Network: allow outbound HTTPS only (dns + tls)
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=0.0.0.0/0
+IPAddressAllow=::/0
 
 [Install]
 WantedBy=multi-user.target
